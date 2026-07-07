@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Employee {
+  id           String      @id
+  email        String      @unique
+  password     String
+  name         String
+  role         String      @default("employee")
+  status       String      @default("active")
+  department   String?
+  designation  String?
+  avatar       String?
+  doj          String?
+  age          Int?
+  bloodGroup   String?
+  contact      String?
+  salaryBasic  Float       @default(0)
+  salaryAllow  Float       @default(0)
+  salaryDeduct Float       @default(0)
+  experience   String?     // Serialized JSON array
+  education    String?     // Serialized JSON array
+  documents    String?     // Serialized JSON
+  managerId    String?
+  preferences  String?     // Serialized JSON
+  permissions  String?     // Serialized JSON
+  onboardingState String   @default("approved") // draft | submitted | approved | returned
+  onboardingNote  String?  // admin note when returned for re-upload
+  
+  leaves                   Leave[]
+  attendance               Attendance[]
+  attendanceRegularization AttendanceRegularization[]
+  assets                   Asset[]
+  payroll                  Payroll[]
+  taxDeclarations          TaxDeclaration[]
+  salaryAdvances           SalaryAdvance[]
+  goals                    Goal[]
+  tickets                  HelpdeskTicket[]
+  replies                  TicketReply[]
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model Leave {
+  id             String   @id @default(cuid())
+  employeeId     String
+  leaveType      String
+  startDate      String
+  endDate        String
+  durationDays   Float    @default(0)
+  reason         String
+  status         String   @default("Pending")
+  requiredLevels Int      @default(1)
+  approvedLevels Int      @default(0)
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  createdAt      DateTime @default(now())
+}
+
+// Configurable mandatory-document checklist for onboarding.
+model DocRequirement {
+  key      String  @id
+  label    String
+  required Boolean @default(true)
+  order    Int     @default(0)
+}
+
+model LeaveBalance {
+  employeeId   String   @id
+  annual       Int      @default(0)
+  sick         Int      @default(0)
+  casual       Int      @default(0)
+}
+
+model Attendance {
+  id           String   @id @default(cuid())
+  employeeId   String
+  date         String
+  checkIn      String?
+  checkOut     String?
+  status       String   @default("Present")
+  employee     Employee @relation(fields: [employeeId], references: [id])
+}
+
+model AttendanceRegularization {
+  id             String   @id @default(cuid())
+  employeeId     String
+  date           String
+  actualCheckIn  String
+  actualCheckOut String
+  reason         String
+  status         String   @default("Pending")
+  employee       Employee @relation(fields: [employeeId], references: [id])
+}
+
+model Asset {
+  id             String   @id @default(cuid())
+  employeeId     String?
+  name           String
+  type           String
+  serialNumber   String
+  condition      String
+  status         String
+  assignedBy     String?
+  assignedDate   String?
+  employee       Employee? @relation(fields: [employeeId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actorName String
+  action    String
+  entity    String
+  entityId  String?
+  detail    String?
+  at        DateTime @default(now())
+}
+
+model Notification {
+  id     String   @id @default(cuid())
+  userId String
+  title  String
+  body   String
+  kind   String   @default("general")
+  read   Boolean  @default(false)
+  at     DateTime @default(now())
+}
+
+model Holiday {
+  id   String @id @default(cuid())
+  date String @unique
+  name String
+}
+
+model PayrollCycle {
+  month       String    @id
+  finalized   Boolean   @default(false)
+  finalizedAt DateTime?
+}
+
+model Payroll {
+  id               String   @id @default(cuid())
+  employeeId       String
+  month            String
+  basic            Float
+  allowances       Float
+  deductions       Float
+  pf               Float
+  esi              Float
+  pt               Float
+  tds              Float
+  advanceDeduction Float    @default(0)
+  grossPay         Float
+  netPay           Float
+  status           String   @default("Paid")
+  paymentDate      String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+}
+
+model TaxDeclaration {
+  id               String   @id @default(cuid())
+  employeeId       String
+  section80C       Float    @default(0)
+  section80D       Float    @default(0)
+  hraRent          Float    @default(0)
+  otherDeductions  Float    @default(0)
+  employee         Employee @relation(fields: [employeeId], references: [id])
+}
+
+model SalaryAdvance {
+  id               String   @id @default(cuid())
+  employeeId       String
+  amount           Float
+  reason           String
+  repaymentMonths  Int
+  status           String   @default("Pending")
+  requestDate      String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+}
+
+model Goal {
+  id               String   @id @default(cuid())
+  employeeId       String
+  title            String
+  progress         Int      @default(0)
+  targetDate       String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+}
+
+model HelpdeskTicket {
+  id               String   @id @default(cuid())
+  employeeId       String
+  subject          String
+  category         String
+  description      String
+  priority         String
+  status           String   @default("Open")
+  createdDate      String
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  replies          TicketReply[]
+}
+
+model TicketReply {
+  id               String   @id @default(cuid())
+  ticketId         String
+  senderId         String
+  text             String
+  date             String
+  ticket           HelpdeskTicket @relation(fields: [ticketId], references: [id])
+  sender           Employee       @relation(fields: [senderId], references: [id])
+}
+
+model Shoutout {
+  id               String   @id @default(cuid())
+  fromId           String
+  toId             String
+  message          String
+  timestamp        String
+}
+
+model SimulatedGDrive {
+  id               String   @id @default(cuid())
+  name             String
+  type             String
+  parent           String
+  content          String?
+}
+
+model SimulatedGSheets {
+  id               String   @id @default(cuid())
+  sheetName        String
+  data             String   // Serialized JSON
+}
+
+model SimulatedGmail {
+  id               String   @id @default(cuid())
+  sender           String
+  recipient        String
+  subject          String
+  body             String
+  timestamp        String
+}

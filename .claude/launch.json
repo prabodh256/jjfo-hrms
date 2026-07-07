@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hrms-preview",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd frontend && set \"VITE_API_TARGET=http://localhost:4000\" && npx vite --port 5180 --strictPort"],
+      "port": 5180
+    },
+    {
+      "name": "overview-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", ".", "-p", "8090", "-c-1", "--silent"],
+      "port": 8090
+    }
+  ]
+}

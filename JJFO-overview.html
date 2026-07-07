@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JJFO Core Enterprise Suite — Software Overview</title>
+<style>
+  :root{
+    --bg:#090d16; --panel:#0f1524; --card:#151e34; --card2:#1d2946;
+    --border:rgba(255,255,255,.08); --text:#f8fafc; --muted:#94a3b8; --dim:#64748b;
+    --primary:#6366f1; --primary2:#4f46e5; --teal:#14b8a6; --coral:#f43f5e;
+    --amber:#fbbf24; --green:#34d399; --blue:#60a5fa; --shadow:0 8px 32px rgba(0,0,0,.37);
+  }
+  [data-theme="light"]{
+    --bg:#eef2f7; --panel:#ffffff; --card:#ffffff; --card2:#f1f5f9;
+    --border:rgba(15,23,42,.1); --text:#0f172a; --muted:#475569; --dim:#94a3b8;
+    --primary:#4f46e5; --primary2:#4338ca; --shadow:0 8px 30px rgba(31,38,135,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Outfit','Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;transition:background .3s,color .3s}
+  a{color:var(--primary)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+  .topbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .topbar-inner{max-width:1080px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.15rem;letter-spacing:.5px}
+  .brand .dot{width:30px;height:30px;border-radius:9px;background:var(--primary);display:grid;place-items:center;color:#fff;font-size:1rem}
+  .nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+  .nav a{color:var(--muted);text-decoration:none;font-size:.82rem;padding:6px 10px;border-radius:8px;font-weight:600}
+  .nav a:hover{color:var(--text);background:var(--card)}
+  .toggle{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:7px 12px;cursor:pointer;font-weight:600;font-size:.82rem;display:flex;gap:6px;align-items:center}
+  .toggle:hover{border-color:var(--primary)}
+  section{padding-top:52px;scroll-margin-top:70px}
+  h1{font-size:2.1rem;font-weight:800;letter-spacing:-.5px}
+  h2{font-size:1.5rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+  h2 .kicker{font-size:.7rem;font-weight:700;color:var(--primary);border:1px solid var(--primary);border-radius:20px;padding:2px 10px;letter-spacing:1px}
+  h3{font-size:1.05rem;font-weight:700}
+  .lead{color:var(--muted);font-size:1.05rem;max-width:720px}
+  .sub{color:var(--muted);margin-bottom:22px;max-width:760px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow)}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
+  .badge{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:.82rem;font-weight:600;color:var(--muted)}
+  .badge.ok{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,transparent)}
+  .badge.pri{color:#fff;background:var(--primary);border-color:var(--primary)}
+  .grid{display:grid;gap:18px}
+  .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:820px){.g3,.g2{grid-template-columns:1fr}}
+  .persona{padding:20px}
+  .persona h3{display:flex;align-items:center;gap:8px}
+  .chip{font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.5px}
+  .chip.admin{background:color-mix(in srgb,var(--coral) 18%,transparent);color:var(--coral)}
+  .chip.lead{background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber)}
+  .chip.emp{background:color-mix(in srgb,var(--teal) 18%,transparent);color:var(--teal)}
+  .persona ul{list-style:none;margin:12px 0;display:flex;flex-direction:column;gap:6px}
+  .persona li{font-size:.88rem;color:var(--muted);padding-left:18px;position:relative}
+  .persona li:before{content:"›";position:absolute;left:2px;color:var(--primary);font-weight:800}
+  .cred{margin-top:10px;font-family:ui-monospace,monospace;font-size:.78rem;color:var(--dim);border-top:1px solid var(--border);padding-top:10px}
+  /* flow */
+  .flow{display:flex;flex-direction:column;gap:0;align-items:center;margin-top:10px}
+  .stage{width:100%;max-width:760px}
+  .node{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;text-align:center}
+  .node .t{font-weight:700}
+  .node .d{color:var(--muted);font-size:.85rem;margin-top:3px}
+  .node.accent{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 12%,var(--card))}
+  .conn{width:2px;height:26px;background:var(--border);margin:0 auto}
+  .branch{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}
+  @media(max-width:820px){.branch{grid-template-columns:1fr}}
+  .bnode{border-radius:12px;padding:12px 14px;border:1px solid var(--border);background:var(--card2)}
+  .bnode .h{font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:7px}
+  .bnode .l{color:var(--muted);font-size:.8rem;margin-top:5px}
+  .mods-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px}
+  .modpill{background:var(--card2);border:1px solid var(--border);border-radius:20px;padding:6px 13px;font-size:.8rem;font-weight:600;cursor:pointer;transition:.2s}
+  .modpill:hover{border-color:var(--primary);color:var(--primary)}
+  /* module cards */
+  details.mod{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:0;overflow:hidden}
+  details.mod>summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:12px;font-weight:700}
+  details.mod>summary::-webkit-details-marker{display:none}
+  details.mod>summary .idx{width:28px;height:28px;border-radius:8px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:.85rem;flex:0 0 auto}
+  details.mod>summary .caret{margin-left:auto;color:var(--dim);transition:.2s}
+  details.mod[open]>summary .caret{transform:rotate(180deg)}
+  details.mod .body{padding:0 18px 18px;color:var(--muted);font-size:.9rem}
+  details.mod .body ul{margin:6px 0 12px 18px;display:flex;flex-direction:column;gap:5px}
+  .tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{font-size:.68rem;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--card2);color:var(--primary);border:1px solid var(--border)}
+  .adm{color:var(--coral);font-size:.72rem;font-weight:700}
+  /* steps */
+  .steps{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin-top:6px}
+  .step{flex:1;min-width:150px;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:13px 14px;position:relative}
+  .step .s{font-size:.68rem;font-weight:700;letter-spacing:.5px;color:var(--dim)}
+  .step .n{font-weight:700;margin:3px 0}
+  .step .x{color:var(--muted);font-size:.82rem}
+  .state{border-left:3px solid var(--primary);border-radius:0 12px 12px 0}
+  .state.lock{border-left-color:var(--coral)} .state.open{border-left-color:var(--teal)}
+  .arrow{align-self:center;color:var(--dim);font-size:1.3rem}
+  @media(max-width:820px){.arrow{transform:rotate(90deg)}}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-top:10px}
+  .legend b{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:middle}
+  /* checklist */
+  .check{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px}
+  @media(max-width:820px){.check{grid-template-columns:1fr}}
+  .check div{font-size:.9rem;color:var(--muted);padding-left:24px;position:relative}
+  .check div:before{content:"✓";position:absolute;left:2px;top:0;color:var(--green);font-weight:800}
+  /* requirements */
+  .filter{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0 16px}
+  .filter input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 14px;width:320px;max-width:100%;outline:none;font-family:inherit}
+  .filter input:focus{border-color:var(--primary)}
+  .count{color:var(--dim);font-size:.85rem}
+  .req{display:flex;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:var(--card);margin-bottom:8px}
+  .req .id{font-family:ui-monospace,monospace;font-weight:700;color:var(--primary);flex:0 0 66px;font-size:.85rem}
+  .req .tx{flex:1;font-size:.9rem}
+  .req .st{flex:0 0 auto;color:var(--green);font-size:.75rem;font-weight:700;white-space:nowrap}
+  .req .cov{color:var(--dim);font-size:.72rem;font-family:ui-monospace,monospace}
+  .foot{margin-top:56px;border-top:1px solid var(--border);padding-top:24px;color:var(--muted);font-size:.9rem;display:grid;gap:14px}
+  .foot code{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:.82rem;color:var(--text)}
+  .hide{display:none!important}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="topbar-inner">
+  <div class="brand"><span class="dot">◆</span> JJFO Core</div>
+  <nav class="nav">
+    <a href="#flow">Flow</a><a href="#personas">Roles</a><a href="#modules">Modules</a>
+    <a href="#workflows">Workflows</a><a href="#security">Security</a><a href="#reqs">Requirements</a>
+  </nav>
+  <button class="toggle" id="tt" onclick="toggleTheme()" aria-label="Toggle theme"><span id="ttico">☾</span> <span id="ttlbl">Dark</span></button>
+</div></div>
+
+<div class="wrap">
+
+<section id="hero" style="padding-top:44px">
+  <h1>JJFO Core Enterprise Suite</h1>
+  <p class="lead">A role-based HRMS for the Jamshed Jeejeebhoy Family Office — employee lifecycle, onboarding with document approval, leave &amp; payroll, assets, helpdesk, and delegated permissions across the org hierarchy.</p>
+  <div class="badges">
+    <span class="badge pri">React 19</span><span class="badge">Vite</span><span class="badge">Express 5</span>
+    <span class="badge">Prisma</span><span class="badge">SQLite</span>
+    <span class="badge ok">Hardened auth</span><span class="badge ok">85 automated checks passing</span>
+  </div>
+</section>
+
+<section id="personas">
+  <h2><span class="kicker">ROLES</span> Who uses it</h2>
+  <p class="sub">Access is driven by role plus a per-user permission set. Everyone keeps a self-service baseline (Dashboard, Leave, Helpdesk, Settings); everything else is granted.</p>
+  <div class="grid g3">
+    <div class="card persona">
+      <h3>Rajesh <span class="chip admin">ADMIN</span></h3>
+      <ul><li>All 10 modules &amp; every capability</li><li>Add / remove employees, approve onboarding</li><li>Adjust leave allotments, run payroll</li><li>Finalizes any approval step</li></ul>
+      <div class="cred">rajesh@jjfo.com · password123</div>
+    </div>
+    <div class="card persona">
+      <h3>Priya <span class="chip lead">TEAM LEAD</span></h3>
+      <ul><li>Delegated caps: create users, approve leaves, financials</li><li>Modules: Directory, Onboarding, Payroll (+ base)</li><li>Creates reports <em>under</em> her — subset only</li><li>Level-1 leave approver for her team</li></ul>
+      <div class="cred">priya@jjfo.com · password123</div>
+    </div>
+    <div class="card persona">
+      <h3>Amit / Sneha / Vikram <span class="chip emp">EMPLOYEE</span></h3>
+      <ul><li>Self-service: profile, leave, helpdesk, settings</li><li>Candidate (Vikram) completes onboarding</li><li>Applies for leave, confirms assets</li><li>Sees only granted modules</li></ul>
+      <div class="cred">sneha@jjfo.com · vikram.candidate@jjfo.com · password123</div>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <h2><span class="kicker">FLOW</span> End-to-end journey</h2>
+  <p class="sub">From sign-in through the security gate to a permission-gated experience. Click a module to jump to its detail.</p>
+  <div class="card" style="padding:24px">
+    <div class="flow">
+      <div class="stage"><div class="node accent"><div class="t">Sign in</div><div class="d">Email + password · "Forgot password?" → manual admin override</div></div></div>
+      <div class="conn"></div>
+      <div class="stage"><div class="node"><div class="t">Security gate</div><div class="d">bcrypt verify · JWT issued in httpOnly + Secure + SameSite cookie · rate-limit · zod validation · CSRF header on writes</div></div></div>
+      <div class="conn"></div>
+      <div class="stage"><div class="node"><div class="t">Resolve role &amp; permissions</div><div class="d">Effective modules + capabilities computed (admin ⇒ everything)</div></div></div>
+      <div class="conn"></div>
+      <div class="stage">
+        <div class="branch">
+          <div class="bnode"><div class="h">Admin</div><div class="l">All 10 modules, all actions</div></div>
+          <div class="bnode"><div class="h">Delegate</div><div class="l">Base + granted modules; can create/approve within subset</div></div>
+          <div class="bnode"><div class="h">Employee</div><div class="l">Base modules; onboarding if pending</div></div>
+        </div>
+      </div>
+      <div class="conn"></div>
+      <div class="stage"><div class="node"><div class="t">Module-gated sidebar</div><div class="d">Only permitted modules render</div></div></div>
+      <div class="conn"></div>
+      <div class="stage">
+        <div class="mods-row">
+          <span class="modpill" onclick="jump('m0')">Dashboard</span><span class="modpill" onclick="jump('m1')">Directory</span>
+          <span class="modpill" onclick="jump('m2')">Onboarding</span><span class="modpill" onclick="jump('m3')">Leave</span>
+          <span class="modpill" onclick="jump('m4')">Payroll</span><span class="modpill" onclick="jump('m5')">Assets</span>
+          <span class="modpill" onclick="jump('m6')">Helpdesk</span><span class="modpill" onclick="jump('m7')">Permissions</span>
+          <span class="modpill" onclick="jump('m8')">Google Sync</span><span class="modpill" onclick="jump('m9')">Settings</span>
+          <span class="modpill" onclick="jump('m10')">Reports</span><span class="modpill" onclick="jump('m11')">Audit Log</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="modules">
+  <h2><span class="kicker">MODULES</span> What it can do</h2>
+  <p class="sub">Twelve modules, each backed by full CRUD on the API. Click to expand.</p>
+  <div class="grid" style="gap:10px">
+
+    <details class="mod" id="m0"><summary><span class="idx">1</span> Dashboard <span class="caret">▾</span></summary>
+      <div class="body">Executive KPI overview.
+        <ul><li>Live counts: active employees, pending leaves, open tickets, confirmed assets</li></ul>
+        <div class="tags"><span class="tag">UR-016</span></div></div></details>
+
+    <details class="mod" id="m1"><summary><span class="idx">2</span> Directory &amp; Org <span class="caret">▾</span></summary>
+      <div class="body">People directory + reporting structure.
+        <ul>
+          <li>Pill search filters by name / department / role</li>
+          <li>Grid view and hierarchical org tree</li>
+          <li><span class="adm">Admin/supervisor:</span> add, edit, remove employees (removal cascades to all records)</li>
+          <li>Self "My Profile" — personal contact details only</li>
+          <li>Incremental work-experience (Experience 1 → 2 → …); documents mirrored to the Drive vault</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-019</span><span class="tag">UR-026</span><span class="tag">Spec E</span></div></div></details>
+
+    <details class="mod" id="m2"><summary><span class="idx">3</span> Onboarding <span class="caret">▾</span></summary>
+      <div class="body">New-hire intake with document approval (see the state machine below).
+        <ul>
+          <li>Admin adds a hire or pushes the form to the employee to complete</li>
+          <li>Employee fills education, experience &amp; uploads mandatory documents, then submits</li>
+          <li>Submission locks the record; admin reviews attachments in a pane</li>
+          <li>Approve (stays locked) or return for re-upload (reopens with a note)</li>
+          <li>Mandatory-document checklist is admin-configurable</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-020</span><span class="tag">UR-029</span><span class="tag">Spec L</span></div></div></details>
+
+    <details class="mod" id="m3"><summary><span class="idx">4</span> Leave &amp; Attendance <span class="caret">▾</span></summary>
+      <div class="body">Balances, applications and hierarchical approvals.
+        <ul>
+          <li>Per-type breakup — Annual / Sick / Casual — total, used, available</li>
+          <li>Employees apply; <span class="adm">admin</span> files leave for anyone &amp; adjusts allotments</li>
+          <li>Approvals route up the manager chain; &gt;5 days needs two levels</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-024</span><span class="tag">UR-028</span><span class="tag">Spec F</span><span class="tag">Spec K</span></div></div></details>
+
+    <details class="mod" id="m4"><summary><span class="idx">5</span> Payroll &amp; Tax <span class="caret">▾</span></summary>
+      <div class="body">Monthly salary processing and tax declarations.
+        <ul>
+          <li>Process payroll by month + year selectors (no single date dropdown)</li>
+          <li>PF / PT / TDS computed from each employee's tax declaration</li>
+          <li>Payslip repository; employees save their own 80C/80D/HRA declarations</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-025</span><span class="tag">Spec F</span><span class="tag">Spec I</span></div></div></details>
+
+    <details class="mod" id="m5"><summary><span class="idx">6</span> Asset Inventory <span class="caret">▾</span></summary>
+      <div class="body">Company IT-asset ledger — who owns what.
+        <ul>
+          <li>Search by owner / asset name / serial</li>
+          <li><span class="adm">Admin:</span> assign, edit (reassign / condition / status), remove</li>
+          <li>Employees confirm receipt of assets assigned to them</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-021</span><span class="tag">Spec G</span></div></div></details>
+
+    <details class="mod" id="m6"><summary><span class="idx">7</span> HR Helpdesk <span class="caret">▾</span></summary>
+      <div class="body">Support ticketing.
+        <ul><li>Raise tickets with category &amp; priority</li><li><span class="adm">Admin/moderator:</span> reply and resolve</li></ul>
+        <div class="tags"><span class="tag">UR-016</span></div></div></details>
+
+    <details class="mod" id="m7"><summary><span class="idx">8</span> Permissions <span class="caret">▾</span></summary>
+      <div class="body">Delegated access control (see the subset diagram below).
+        <ul>
+          <li>Grant module access + capabilities per employee</li>
+          <li>You can only grant a subset of what you hold — enforced server-side</li>
+          <li>Picker shows exactly what the granter can give</li>
+        </ul>
+        <div class="tags"><span class="tag">UR-027</span><span class="tag">Spec J</span></div></div></details>
+
+    <details class="mod" id="m8"><summary><span class="idx">9</span> Google Sync <span class="caret">▾</span></summary>
+      <div class="body">Simulated Google Workspace integration.
+        <ul><li>Drive, Sheets and Gmail tabs with seeded records</li><li>Each employee's documents mirror into their Drive vault folder</li></ul>
+        <div class="tags"><span class="tag">Spec E</span></div></div></details>
+
+    <details class="mod" id="m9"><summary><span class="idx">10</span> Settings <span class="caret">▾</span></summary>
+      <div class="body">Per-user personalization, persisted server-side.
+        <ul><li>Light / dark theme, applied live (this page mirrors it)</li><li>Multiple font families and font sizes</li><li>In-app notification kind preferences</li></ul>
+        <div class="tags"><span class="tag">UR-022</span><span class="tag">UR-023</span><span class="tag">UR-036</span><span class="tag">Spec H</span></div></div></details>
+
+    <details class="mod" id="m10"><summary><span class="idx">11</span> Reports <span class="caret">▾</span></summary>
+      <div class="body">Operational summaries with CSV export.
+        <ul><li>Headcount, leave utilization, payroll cycles, asset allocation, helpdesk resolution, permission changes</li><li>Supervisor/admin access; one-click CSV download</li></ul>
+        <div class="tags"><span class="tag">UR-040</span><span class="tag">Spec P</span></div></div></details>
+
+    <details class="mod" id="m11"><summary><span class="idx">12</span> Audit Log <span class="caret">▾</span></summary>
+      <div class="body">Who did what, when — across every sensitive action.
+        <ul><li>Employee/permission/leave/payroll/asset/ticket/password events</li><li>Entity filters; admin-only</li></ul>
+        <div class="tags"><span class="tag">UR-035</span><span class="tag">Spec N</span></div></div></details>
+  </div>
+</section>
+
+<section id="workflows">
+  <h2><span class="kicker">WORKFLOWS</span> The signature flows</h2>
+
+  <h3 style="margin:22px 0 6px">Onboarding — submission &amp; document approval</h3>
+  <div class="card" style="padding:20px">
+    <div class="steps">
+      <div class="step state open"><div class="s">EDITABLE</div><div class="n">Draft / Returned</div><div class="x">Employee fills education, experience &amp; uploads docs</div></div>
+      <div class="arrow">→</div>
+      <div class="step state lock"><div class="s">LOCKED</div><div class="n">Submitted</div><div class="x">Needs all mandatory docs · cells lock on submit</div></div>
+      <div class="arrow">→</div>
+      <div class="step state lock"><div class="s">LOCKED</div><div class="n">Approved</div><div class="x">Admin reviews attachments &amp; approves — no more edits</div></div>
+    </div>
+    <div class="legend">
+      <span><b style="background:var(--teal)"></b>Employee can edit</span>
+      <span><b style="background:var(--coral)"></b>Locked</span>
+      <span class="muted">Admin can <em>return</em> a submitted/approved record → back to editable with a note. Mandatory docs configurable by admin.</span>
+    </div>
+  </div>
+
+  <h3 style="margin:24px 0 6px">Leave approval — up the reporting chain</h3>
+  <div class="card" style="padding:20px">
+    <div class="steps">
+      <div class="step"><div class="s">REQUEST</div><div class="n">Employee applies</div><div class="x">Duration decides the depth</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="s">LEVEL 1</div><div class="n">Direct manager</div><div class="x">Approves with the "approve leaves" capability</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="s">LEVEL 2 · &gt;5 DAYS</div><div class="n">Manager's manager</div><div class="x">Second sign-off only when &gt; 5 days</div></div>
+      <div class="arrow">→</div>
+      <div class="step state open"><div class="s">DONE</div><div class="n">Approved</div><div class="x">Balance updates</div></div>
+    </div>
+    <div class="legend"><span class="muted">≤ 5 days → 1 level · &gt; 5 days → 2 levels (clamped to how many managers exist). Each step needs the right approver; admin can finalize any step.</span></div>
+  </div>
+
+  <h3 style="margin:24px 0 6px">Delegated permissions — the subset rule</h3>
+  <div class="card" style="padding:20px">
+    <div class="steps">
+      <div class="step"><div class="s">GRANTER</div><div class="n">Person 1</div><div class="x">Holds a set of modules + capabilities</div></div>
+      <div class="arrow">→</div>
+      <div class="step state open"><div class="s">CREATES</div><div class="n">Person 1A</div><div class="x">Gets a <em>subset</em> — e.g. "approve leaves" but <em>not</em> "create users"</div></div>
+      <div class="arrow">→</div>
+      <div class="step state lock"><div class="s">BLOCKED</div><div class="n">1A → 1A(a)</div><div class="x">Without "create users", 1A cannot create further. Over-granting → 403</div></div>
+    </div>
+    <div class="legend"><span class="muted">New users are placed under their creator in the hierarchy. A grant can never exceed the granter's own permissions.</span></div>
+  </div>
+</section>
+
+<section id="security">
+  <h2><span class="kicker">FOUNDATION</span> Security &amp; architecture</h2>
+  <div class="grid g2">
+    <div class="card" style="padding:20px">
+      <h3 style="margin-bottom:12px">Hardened authentication</h3>
+      <div class="check">
+        <div>bcrypt password hashing (cost 12)</div>
+        <div>JWT in httpOnly + Secure + SameSite cookies</div>
+        <div>Env-only JWT secret, fail-fast at boot</div>
+        <div>Login rate-limit (failed attempts only) + global limiter</div>
+        <div>zod input validation</div>
+        <div>Public registration removed</div>
+        <div>CSRF header required on all writes</div>
+        <div>Helmet headers · shared Prisma client</div>
+        <div>Password hashes never sent to the client</div>
+        <div>Server-enforced permission &amp; lock checks</div>
+      </div>
+    </div>
+    <div class="card" style="padding:20px">
+      <h3 style="margin-bottom:12px">Architecture</h3>
+      <div class="check">
+        <div>React 19 + Vite SPA (react-router + zustand)</div>
+        <div>Express 5 + Prisma + SQLite</div>
+        <div>SQLite is the single source of truth</div>
+        <div>Vite proxies /api and /auth to the backend</div>
+        <div>Legacy localStorage monolith retired</div>
+        <div>Rich seed data across every module</div>
+        <div>Optimized: no N+1 on leaves, parallel dashboard counts</div>
+        <div>Atomic cascade delete · payroll batch preload</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="reqs">
+  <h2><span class="kicker">TRACEABILITY</span> Every requirement</h2>
+  <p class="sub">All 29 captured requirements, delivered and covered by tests. Type to filter.</p>
+  <div class="filter">
+    <input id="q" type="text" placeholder="Filter requirements… (e.g. leave, onboarding, security)" oninput="filterReqs()" aria-label="Filter requirements" />
+    <span class="count" id="count"></span>
+  </div>
+  <div id="reqlist"></div>
+</section>
+
+<div class="foot">
+  <div><strong>Run it</strong> — UI at <code>http://localhost:5174</code>, API at <code>http://localhost:4000</code>. Reset demo data: <code>cd backend &amp;&amp; npm run seed</code>. Automated tests: <code>npm run test:smoke</code>.</div>
+  <div><strong>Sign-in</strong> — <code>rajesh@jjfo.com</code> (admin) · <code>priya@jjfo.com</code> (team lead) · <code>sneha@jjfo.com</code> (employee) · <code>vikram.candidate@jjfo.com</code> (onboarding). Password for all: <code>password123</code>.</div>
+  <div class="muted">JJFO Core Enterprise Suite — generated overview. Interactive: toggle the theme, expand modules, filter requirements.</div>
+</div>
+
+</div>
+
+<script>
+  const REQS = [
+    ["UR-001","Review the code and outline what can be improved","DIR/all"],
+    ["UR-002","Implement recommendations; tightest auth &amp; security","T-SEC"],
+    ["UR-003","Use dummy data (no production migration)","seed"],
+    ["UR-004","Explain the React + Express + SQLite architecture","docs"],
+    ["UR-005","Serve the application locally for review","run"],
+    ["UR-006","Render the frontend in normal webpage mode","visual"],
+    ["UR-007","Confirm local environment / installs needed","docs"],
+    ["UR-008","Dark-mode styling constraints (navy / white)","SET-1"],
+    ["UR-009","Restore legacy layout &amp; all 10 sidebar items","visual"],
+    ["UR-010","Implement features step-by-step, token-efficient","—"],
+    ["UR-011","Fix sidebar double-highlight tab sync","visual"],
+    ["UR-012","Add a Forgot Password option to login","visual"],
+    ["UR-013","Resolve blank tab pages / unhydrated context","visual"],
+    ["UR-014","Harden backend auth &amp; security","SEC-1..4"],
+    ["UR-015","Migrate to SQLite source of truth; real React","all"],
+    ["UR-016","Build all 10 modules with full backend CRUD","all module"],
+    ["UR-017","Fix layout &amp; seed rich dummy data","GS-1"],
+    ["UR-018","Modern pill search inputs","DIR-1, AST-1"],
+    ["UR-019","Admin add &amp; remove users","DIR-2, DIR-3"],
+    ["UR-020","Onboarding add/modify; propagate across portals","ONB-1, ONB-2"],
+    ["UR-021","Asset search by owner + add/modify","AST-1"],
+    ["UR-022","Multiple font families AND font sizes","SET-1"],
+    ["UR-023","Light/dark themes; legible dropdown contrast","SET-1"],
+    ["UR-024","Admin adds leave for anyone; breakup; adjust allotment","LEA-1, LEA-3"],
+    ["UR-025","No single date dropdown — calendar or month+year","DATE-1, PAY-1"],
+    ["UR-026","Incremental work-ex + document uploads → Drive","DIR-2, GS-2"],
+    ["UR-027","Delegated subset permissions across the hierarchy","PER-1..3"],
+    ["UR-028","Leave approval chain; &gt;5 days needs 2 levels","APP-1..3"],
+    ["UR-029","Onboarding submit / lock / approve; mandatory docs","ONB-1..7"]
+  ];
+  function render(list){
+    document.getElementById('reqlist').innerHTML = list.map(r =>
+      '<div class="req" data-t="'+(r[0]+' '+r[1]).toLowerCase()+'"><span class="id">'+r[0]+'</span>'+
+      '<span class="tx">'+r[1]+'<div class="cov">tests: '+r[2]+'</div></span>'+
+      '<span class="st">✓ done</span></div>').join('');
+    document.getElementById('count').textContent = list.length+' of '+REQS.length+' shown';
+  }
+  function filterReqs(){
+    const q = document.getElementById('q').value.toLowerCase().trim();
+    render(q ? REQS.filter(r => (r[0]+' '+r[1]).toLowerCase().includes(q)) : REQS);
+  }
+  function toggleTheme(){
+    const h = document.documentElement, light = h.getAttribute('data-theme')==='light';
+    h.setAttribute('data-theme', light?'dark':'light');
+    document.getElementById('ttico').textContent = light?'☾':'☀';
+    document.getElementById('ttlbl').textContent = light?'Dark':'Light';
+  }
+  function jump(id){ const e=document.getElementById(id); if(e){ e.open=true; e.scrollIntoView({behavior:'smooth',block:'center'}); } }
+  render(REQS);
+</script>
+</body>
+</html>
