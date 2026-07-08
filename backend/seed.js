@@ -29,6 +29,7 @@ async function main() {
   await prisma.payrollCycle.deleteMany();
   await prisma.session.deleteMany();
   await prisma.appSetting.deleteMany();
+  try { await prisma.permissionRequest.deleteMany(); } catch { /* model may be new */ }
   await prisma.employee.deleteMany();
 
   // Company defaults
@@ -90,7 +91,8 @@ async function main() {
       managerId: 'EMP001',
       preferences: JSON.stringify({ font: 'Inter', theme: 'dark', fontSize: 'medium' }),
       // Team lead: can create reports (subset) and approve leaves at level 1.
-      permissions: JSON.stringify({ modules: ['directory', 'onboarding', 'payroll'], caps: { createUsers: true, approveLeaves: true, accessFinancials: true } })
+      // No payroll by default — admin must grant payroll module explicitly.
+      permissions: JSON.stringify({ modules: { directory: 'edit', onboarding: 'edit' }, caps: { createUsers: true, approveLeaves: true, accessFinancials: true } })
     },
     {
       id: 'EMP003', name: 'Amit Patel', role: 'employee', status: 'active',
@@ -103,7 +105,7 @@ async function main() {
       documents: JSON.stringify({ idProof: 'EMP003_IDProof.pdf' }),
       managerId: 'EMP001',
       preferences: JSON.stringify({ font: 'Roboto', theme: 'dark', fontSize: 'medium' }),
-      permissions: JSON.stringify({ modules: ['assets', 'helpdesk'], caps: { approveLeaves: true, moderateHelpdesk: true } })
+      permissions: JSON.stringify({ modules: { assets: 'edit' }, caps: { approveLeaves: true, moderateHelpdesk: true } })
     },
     {
       id: 'EMP004', name: 'Sneha Desai', role: 'employee', status: 'active',

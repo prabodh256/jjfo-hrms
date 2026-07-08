@@ -189,7 +189,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  min-height: 0;
+  overflow: visible; /* allow notification panel to paint outside */
   position: relative;
 }
 
@@ -1382,7 +1383,11 @@ body.compact-mode .form-group {
   padding: 0 30px;
   border-radius: 0;
   border-bottom: 1px solid var(--bg-card-border);
+  overflow: visible;
+  position: relative;
+  z-index: 40;
 }
+.main-content { overflow: visible; }
 .topbar-search {
   display: flex;
   align-items: center;
@@ -1583,8 +1588,8 @@ textarea.form-control { min-height: 84px; resize: vertical; }
   margin-top: 8px;
 }
 
-/* Notification bell */
-.bell-wrap { position: relative; }
+/* Notification bell — panel fixed so it is never clipped by layout overflow */
+.bell-wrap { position: relative; z-index: 500; }
 .bell-btn {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
@@ -1597,25 +1602,64 @@ textarea.form-control { min-height: 84px; resize: vertical; }
 .bell-btn:hover { border-color: var(--primary); }
 .bell-count {
   position: absolute; top: -6px; right: -6px;
-  background: var(--accent); color: #fff;
+  background: var(--accent, #ef4444); color: #fff;
   border-radius: 20px; font-size: 0.65rem; font-weight: 700;
   min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 4px;
 }
 .bell-panel {
-  position: absolute; right: 0; top: 48px;
-  width: 340px; max-height: 420px; overflow-y: auto;
-  z-index: 300; padding: 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: min(380px, 92vw);
+  max-height: min(480px, 70vh);
+  z-index: 1000;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--bg-card-border);
+  background: var(--bg-card, #0f172a);
+  color: var(--text-primary, #f8fafc);
 }
-.bell-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.bell-empty { color: var(--text-muted); font-size: 0.85rem; padding: 8px 4px; }
+.bell-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--bg-card-border);
+  flex-shrink: 0;
+  background: var(--bg-card, #0f172a);
+}
+.bell-list {
+  overflow-y: auto;
+  padding: 8px;
+  flex: 1;
+  min-height: 80px;
+}
+.bell-empty { color: var(--text-muted); font-size: 0.85rem; padding: 16px 8px; }
 .bell-item {
   padding: 10px; border-radius: 10px; cursor: pointer;
   border: 1px solid transparent; margin-bottom: 4px;
+  background: transparent;
 }
 .bell-item.unread { background: var(--input-bg); border-color: var(--bg-card-border); }
-.bell-item strong { font-size: 0.85rem; }
-.bell-item p { font-size: 0.8rem; color: var(--text-secondary); margin: 2px 0; }
+.bell-item strong { font-size: 0.85rem; display: block; color: var(--text-primary); }
+.bell-item p { font-size: 0.8rem; color: var(--text-secondary, #cbd5e1); margin: 2px 0; white-space: normal; word-break: break-word; }
 .bell-item small { font-size: 0.7rem; color: var(--text-muted); }
+
+.perm-level-list { display: flex; flex-direction: column; gap: 8px; }
+.perm-level-row {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 10px; background: var(--input-bg); border: 1px solid var(--bg-card-border);
+}
+.perm-level-row.perm-payroll { border-color: #f59e0b55; }
+.perm-level-label { font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+.perm-badge {
+  font-size: 0.65rem; font-style: normal; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px; background: #f59e0b33; color: #fbbf24;
+}
+.perm-level-opts { display: flex; gap: 12px; font-size: 0.8rem; }
+.perm-level-opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.form-ok { color: #6ee7b7; font-size: 0.9rem; }
+.trail-team-row td:first-child { border-left: 3px solid var(--primary, #4f46e5); }
 
 /* Permission picker (delegated grants) */
 .perm-picker { margin-top: 4px; }

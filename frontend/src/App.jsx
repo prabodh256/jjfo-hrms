@@ -66,6 +66,7 @@ function ToastHost() {
 function NotificationBell() {
   const { user, notifications, fetchNotifications, markRead, markAllRead } = useStore();
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
   const kinds = parsePrefs(user?.preferences).notifyKinds;
   const visible = notifications.filter((n) => !kinds || n.kind === 'general' || kinds.includes(n.kind));
   const unread = visible.filter((n) => !n.read).length;
@@ -76,9 +77,18 @@ function NotificationBell() {
     return () => clearInterval(t);
   }, [fetchNotifications]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
   return (
-    <div className="bell-wrap">
-      <button type="button" className="bell-btn" aria-label="Notifications" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <div className="bell-wrap" ref={wrapRef}>
+      <button type="button" className="bell-btn" aria-label="Notifications" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <i className="material-icons-round">notifications</i>
         {unread > 0 && <span className="bell-count">{unread}</span>}
       </button>
@@ -86,28 +96,33 @@ function NotificationBell() {
         <div className="bell-panel glass" role="dialog" aria-label="Notification list">
           <div className="bell-head">
             <strong>Notifications</strong>
-            {unread > 0 && (
-              <button type="button" className="btn btn-sm btn-secondary" onClick={markAllRead}>Mark all read</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {unread > 0 && (
+                <button type="button" className="btn btn-sm btn-secondary" onClick={markAllRead}>Mark all read</button>
+              )}
+              <button type="button" className="btn btn-sm btn-secondary" aria-label="Close" onClick={() => setOpen(false)}>✕</button>
+            </div>
+          </div>
+          <div className="bell-list">
+            {visible.length === 0 ? (
+              <p className="bell-empty">Nothing yet.</p>
+            ) : (
+              visible.slice(0, 20).map((n) => (
+                <div
+                  key={n.id}
+                  className={`bell-item ${n.read ? '' : 'unread'}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => !n.read && markRead(n.id)}
+                  onKeyDown={(e) => e.key === 'Enter' && !n.read && markRead(n.id)}
+                >
+                  <strong>{n.title}</strong>
+                  <p>{n.body}</p>
+                  <small>{new Date(n.at).toLocaleString()}</small>
+                </div>
+              ))
             )}
           </div>
-          {visible.length === 0 ? (
-            <p className="bell-empty">Nothing yet.</p>
-          ) : (
-            visible.slice(0, 12).map((n) => (
-              <div
-                key={n.id}
-                className={`bell-item ${n.read ? '' : 'unread'}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => !n.read && markRead(n.id)}
-                onKeyDown={(e) => e.key === 'Enter' && !n.read && markRead(n.id)}
-              >
-                <strong>{n.title}</strong>
-                <p>{n.body}</p>
-                <small>{new Date(n.at).toLocaleString()}</small>
-              </div>
-            ))
-          )}
         </div>
       )}
     </div>

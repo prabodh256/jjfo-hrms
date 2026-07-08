@@ -8,7 +8,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const prisma = require('../prisma/client');
 const {
   parseJson, effectivePerms, isSubset, normalizePerms, isSupervisor,
-  redactEmployee, redactEmployees
+  redactEmployee, redactEmployees, hasModule, makeStamp
 } = require('../lib/perms');
 const { audit, notify } = require('../lib/audit');
 const { parsePagination, paginated } = require('../lib/pagination');
@@ -436,16 +436,35 @@ router.post('/employees/:id/onboarding/push', authenticate, (req, res) => onboar
 router.post('/employees/:id/onboarding/approve', authenticate, (req, res) => onboardingTransition(req, res, 'approved', null));
 router.post('/employees/:id/onboarding/return', authenticate, (req, res) => onboardingTransition(req, res, 'returned', 'Please re-check and re-upload your documents.'));
 
-// Leaves
+// Leaves — own + team trail for managers / all for admin
 router.get('/leaves', authenticate, async (req, res) => {
   try {
+    const actor = await loadActor(req);
+    const isAdmin = actor?.role === 'admin';
+    const canMgr = isAdmin || effectivePerms(actor).caps.approveLeaves;
+    const all = await prisma.employee.findMany({ select: { id: true, managerId: true, name: true } });
+    const mgrMap = new Map(all.map((e) => [e.id, e.managerId]));
+    // Direct + nested reports of this manager
+    const reportIds = new Set();
+    if (canMgr && !isAdmin) {
+      let frontier = all.filter((e) => e.managerId === actor.id).map((e) => e.id);
+      while (frontier.length) {
+        for (const id of frontier) reportIds.add(id);
+        frontier = all.filter((e) => e.managerId && frontier.includes(e.managerId)).map((e) => e.id);
+      }
+    }
     const leaves = await prisma.leave.findMany({
-      include: { employee: { select: { name: true } } },
+      include: { employee: { select: { name: true, managerId: true } } },
       orderBy: { createdAt: 'desc' }
     });
-    // Build the manager map once, then resolve approvers in-memory (no N+1).
-    const mgrMap = new Map((await prisma.employee.findMany({ select: { id: true, managerId: true } })).map(e => [e.id, e.managerId]));
-    const enriched = leaves.map((l) => ({
+    const filtered = leaves.filter((l) => {
+      if (isAdmin) return true;
+      if (l.employeeId === actor.id) return true;
+      if (canMgr && reportIds.has(l.employeeId)) return true;
+      if (canMgr && l.status === 'Pending' && approverFromMap(mgrMap, l.employeeId, l.approvedLevels + 1) === actor.id) return true;
+      return false;
+    });
+    const enriched = filtered.map((l) => ({
       ...l,
       currentApproverId: l.status === 'Pending' ? approverFromMap(mgrMap, l.employeeId, l.approvedLevels + 1) : null
     }));
@@ -468,15 +487,18 @@ router.post('/leaves', authenticate, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const employeeId = (isAdmin && req.body.employeeId) ? req.body.employeeId : req.user.id;
 
-    // Enforce available balance for the leave type (admins may override).
+    // Deduct immediately on apply: Pending + Approved consume balance (reject/cancel releases).
     const typeKey = LEAVE_TYPE_KEY[leaveType];
     if (!isAdmin && typeKey) {
       const bal = await prisma.leaveBalance.findUnique({ where: { employeeId } });
-      const approved = await prisma.leave.findMany({ where: { employeeId, leaveType, status: 'Approved' }, select: { durationDays: true } });
-      const used = approved.reduce((s, l) => s + l.durationDays, 0);
+      const reserved = await prisma.leave.findMany({
+        where: { employeeId, leaveType, status: { in: ['Pending', 'Approved'] } },
+        select: { durationDays: true }
+      });
+      const used = reserved.reduce((s, l) => s + l.durationDays, 0);
       const available = Math.max(0, (bal?.[typeKey] || 0) - used);
       if (durationDays > available) {
-        return res.status(400).json({ error: `Insufficient ${leaveType} balance — ${available} day(s) available.` });
+        return res.status(400).json({ error: `Insufficient ${leaveType} balance — ${available} day(s) available (pending applications already reserved).` });
       }
     }
 
@@ -583,22 +605,42 @@ router.delete('/leaves/:id', authenticate, authorize(['admin']), async (req, res
   }
 });
 
-// Leave balances with used/available breakup (admin sees all; others see own).
+// Leave balances — used = Pending + Approved (immediate reservation on apply).
 router.get('/leave-balances', authenticate, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const employees = await prisma.employee.findMany({
-      where: isAdmin ? {} : { id: req.user.id }, select: { id: true, name: true }
-    });
+    const actor = await loadActor(req);
+    const isAdmin = actor?.role === 'admin';
+    const canMgr = isAdmin || effectivePerms(actor).caps.approveLeaves;
+    let employees;
+    if (isAdmin) {
+      employees = await prisma.employee.findMany({ where: { status: 'active' }, select: { id: true, name: true } });
+    } else if (canMgr) {
+      const all = await prisma.employee.findMany({ where: { status: 'active' }, select: { id: true, name: true, managerId: true } });
+      employees = all.filter((e) => e.id === actor.id || e.managerId === actor.id);
+    } else {
+      employees = await prisma.employee.findMany({ where: { id: actor.id }, select: { id: true, name: true } });
+    }
     const balances = await prisma.leaveBalance.findMany();
-    const approved = await prisma.leave.findMany({ where: { status: 'Approved' } });
-    const result = employees.map(e => {
-      const bal = balances.find(b => b.employeeId === e.id) || { annual: 0, sick: 0, casual: 0 };
+    const activeLeaves = await prisma.leave.findMany({
+      where: { status: { in: ['Pending', 'Approved'] } },
+      select: { employeeId: true, leaveType: true, durationDays: true, status: true }
+    });
+    const result = employees.map((e) => {
+      const bal = balances.find((b) => b.employeeId === e.id) || { annual: 0, sick: 0, casual: 0 };
       const used = { annual: 0, sick: 0, casual: 0 };
-      approved.filter(l => l.employeeId === e.id).forEach(l => {
-        const k = LEAVE_TYPE_KEY[l.leaveType]; if (k) used[k] += l.durationDays;
+      const pending = { annual: 0, sick: 0, casual: 0 };
+      activeLeaves.filter((l) => l.employeeId === e.id).forEach((l) => {
+        const k = LEAVE_TYPE_KEY[l.leaveType];
+        if (!k) return;
+        used[k] += l.durationDays;
+        if (l.status === 'Pending') pending[k] += l.durationDays;
       });
-      const mk = (t) => ({ total: bal[t], used: used[t], available: Math.max(0, bal[t] - used[t]) });
+      const mk = (t) => ({
+        total: bal[t],
+        used: used[t],
+        pending: pending[t],
+        available: Math.max(0, bal[t] - used[t])
+      });
       return { employeeId: e.id, name: e.name, annual: mk('annual'), sick: mk('sick'), casual: mk('casual') };
     });
     res.json(result);
@@ -607,7 +649,7 @@ router.get('/leave-balances', authenticate, async (req, res) => {
   }
 });
 
-// Adjust an employee's leave allotment (admin only).
+// Adjust one employee's leave allotment (admin only).
 router.put('/leave-balances/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const data = {};
@@ -621,6 +663,39 @@ router.put('/leave-balances/:id', authenticate, authorize(['admin']), async (req
     res.json(bal);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update balance' });
+  }
+});
+
+// Year-start / bulk allotment: all active users, or a selected set (admin only).
+router.post('/leave-balances/bulk', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const annual = Number(req.body.annual);
+    const sick = Number(req.body.sick);
+    const casual = Number(req.body.casual);
+    if ([annual, sick, casual].some((n) => Number.isNaN(n) || n < 0)) {
+      return res.status(400).json({ error: 'annual, sick, casual must be non-negative numbers.' });
+    }
+    let ids = Array.isArray(req.body.employeeIds) ? req.body.employeeIds.filter(Boolean) : [];
+    if (!ids.length || req.body.all === true) {
+      const active = await prisma.employee.findMany({ where: { status: 'active' }, select: { id: true } });
+      ids = active.map((e) => e.id);
+    }
+    const results = [];
+    for (const employeeId of ids) {
+      const bal = await prisma.leaveBalance.upsert({
+        where: { employeeId },
+        update: { annual, sick, casual },
+        create: { employeeId, annual, sick, casual }
+      });
+      results.push(bal);
+      await notify(employeeId, 'Leave allotment updated',
+        `Your leave balances were set: Annual ${annual}, Sick ${sick}, Casual ${casual}.`, 'leave');
+    }
+    await audit(req.user, 'bulk-allotment', 'leave', null, `${ids.length} employees → A${annual}/S${sick}/C${casual}`);
+    res.json({ updated: results.length, balances: results });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed bulk leave allotment' });
   }
 });
 
@@ -1037,10 +1112,20 @@ router.delete('/helpdesk/:id', authenticate, authorize(['admin']), async (req, r
   }
 });
 
-// Payroll
+// Payroll — disabled by default; requires payroll module (admin always has it).
+async function requirePayrollAccess(req, res) {
+  const actor = await loadActor(req);
+  if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return null; }
+  if (actor.role === 'admin' || hasModule(actor, 'payroll')) return actor;
+  res.status(403).json({ error: 'Payroll is disabled for your account. Ask an administrator to grant access.' });
+  return null;
+}
+
 router.get('/payroll', authenticate, async (req, res) => {
   try {
-    const where = req.user.role === 'admin' ? {} : { employeeId: req.user.id };
+    const actor = await requirePayrollAccess(req, res);
+    if (!actor) return;
+    const where = actor.role === 'admin' ? {} : { employeeId: actor.id };
     const payroll = await prisma.payroll.findMany({ where, include: { employee: { select: { name: true } } } });
     res.json(payroll);
   } catch (error) {
@@ -1114,13 +1199,16 @@ router.post('/payroll/finalize', authenticate, authorize(['admin']), async (req,
 });
 
 router.get('/payroll/cycles', authenticate, async (req, res) => {
-  try { res.json(await prisma.payrollCycle.findMany()); }
-  catch (error) { res.status(500).json({ error: 'Failed to fetch payroll cycles' }); }
+  try {
+    if (!(await requirePayrollAccess(req, res))) return;
+    res.json(await prisma.payrollCycle.findMany());
+  } catch (error) { res.status(500).json({ error: 'Failed to fetch payroll cycles' }); }
 });
 
-// Tax declaration (own)
+// Tax declaration (own) — also gated by payroll module
 router.get('/tax', authenticate, async (req, res) => {
   try {
+    if (!(await requirePayrollAccess(req, res))) return;
     const tax = await prisma.taxDeclaration.findFirst({ where: { employeeId: req.user.id } });
     res.json(tax || null);
   } catch (error) {
@@ -1130,6 +1218,7 @@ router.get('/tax', authenticate, async (req, res) => {
 
 router.post('/tax', authenticate, async (req, res) => {
   try {
+    if (!(await requirePayrollAccess(req, res))) return;
     const data = {
       employeeId: req.user.id,
       section80C: Number(req.body.section80C) || 0,
@@ -1156,7 +1245,82 @@ router.get('/permissions/grantable', authenticate, async (req, res) => {
   }
 });
 
-// Delegated permission management — grants must be a subset of the granter's.
+// Pending permission escalations (manager / admin).
+router.get('/permissions/requests', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    const isAdmin = actor?.role === 'admin';
+    const canReview = isAdmin || effectivePerms(actor).caps.createUsers || effectivePerms(actor).caps.manageHierarchy;
+    if (!canReview) return res.status(403).json({ error: 'Not allowed.' });
+    const rows = await prisma.permissionRequest.findMany({
+      where: isAdmin ? {} : { status: 'Pending' },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    // Non-admins only see requests for their direct reports or self-requested needing their stamp
+    const emps = await prisma.employee.findMany({ select: { id: true, name: true, managerId: true } });
+    const nameOf = Object.fromEntries(emps.map((e) => [e.id, e.name]));
+    const filtered = rows.filter((r) => {
+      if (isAdmin) return true;
+      const target = emps.find((e) => e.id === r.targetId);
+      return target?.managerId === actor.id || r.requestedBy === actor.id;
+    });
+    res.json(filtered.map((r) => ({
+      ...r,
+      targetName: nameOf[r.targetId],
+      requesterName: nameOf[r.requestedBy],
+      payload: parseJson(r.payload)
+    })));
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list permission requests' });
+  }
+});
+
+router.put('/permissions/requests/:id/decide', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    const isAdmin = actor?.role === 'admin';
+    const canReview = isAdmin || effectivePerms(actor).caps.createUsers || effectivePerms(actor).caps.manageHierarchy;
+    if (!canReview) return res.status(403).json({ error: 'Not allowed.' });
+    const approve = !!req.body.approve;
+    const row = await prisma.permissionRequest.findUnique({ where: { id: req.params.id } });
+    if (!row || row.status !== 'Pending') return res.status(400).json({ error: 'Request not pending.' });
+    const target = await prisma.employee.findUnique({ where: { id: row.targetId } });
+    if (!isAdmin && target?.managerId !== actor.id) {
+      return res.status(403).json({ error: 'Only the manager or admin can stamp this request.' });
+    }
+    const stamp = makeStamp(actor, approve ? 'APPROVED' : 'REJECTED');
+    if (approve) {
+      const payload = parseJson(row.payload);
+      await prisma.employee.update({
+        where: { id: row.targetId },
+        data: { permissions: JSON.stringify(normalizePerms(payload)) }
+      });
+      await notify(row.targetId, 'Access approved', `Your permission change was stamped: ${stamp}`, 'permission');
+    } else {
+      await notify(row.targetId, 'Access change rejected', req.body.note || 'Your permission request was rejected.', 'permission');
+    }
+    await notify(row.requestedBy, `Permission request ${approve ? 'approved' : 'rejected'}`,
+      `Target ${row.targetId}: ${stamp}`, 'permission');
+    const updated = await prisma.permissionRequest.update({
+      where: { id: row.id },
+      data: {
+        status: approve ? 'Approved' : 'Rejected',
+        stamp,
+        note: req.body.note || null,
+        decidedBy: actor.id,
+        decidedAt: new Date()
+      }
+    });
+    await audit(actor, approve ? 'permissions-approve' : 'permissions-reject', 'permission-request', row.id, stamp);
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to decide permission request' });
+  }
+});
+
+// Delegated permission management — view/edit levels; non-admin escalates for stamp.
 router.put('/employees/:id/permissions', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
@@ -1167,17 +1331,51 @@ router.put('/employees/:id/permissions', authenticate, async (req, res) => {
     }
     const requested = normalizePerms(req.body.permissions);
     if (!isAdmin && !isSubset(requested, actorPerms)) {
-      return res.status(403).json({ error: 'You can only grant permissions you hold yourself.' });
+      return res.status(403).json({ error: 'You can only grant permissions you hold yourself (including view/edit level).' });
     }
-    const target = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { role: true } });
-    if (!isAdmin && target?.role === 'admin') return res.status(403).json({ error: 'Cannot edit an admin\'s permissions.' });
-    const emp = await prisma.employee.update({
-      where: { id: req.params.id }, data: { permissions: JSON.stringify(requested) }, omit: { password: true }
+    const target = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { role: true, name: true, managerId: true } });
+    if (!target) return res.status(404).json({ error: 'Employee not found' });
+    if (!isAdmin && target.role === 'admin') return res.status(403).json({ error: 'Cannot edit an admin\'s permissions.' });
+
+    // Super admin: apply immediately with stamp.
+    if (isAdmin) {
+      const stamp = makeStamp(actor, 'ADMIN-STAMP');
+      const emp = await prisma.employee.update({
+        where: { id: req.params.id },
+        data: { permissions: JSON.stringify(requested) },
+        omit: { password: true }
+      });
+      await audit(actor, 'permissions-change', 'employee', emp.id, `${stamp} ${JSON.stringify(requested)}`);
+      await notify(emp.id, 'Your access changed', `Updated by admin. Stamp: ${stamp}`, 'permission');
+      return res.json({ ...emp, stamp, applied: true });
+    }
+
+    // Others: escalate for manager / admin stamp (capture trail).
+    const stampPending = makeStamp(actor, 'ESCALATED');
+    const pr = await prisma.permissionRequest.create({
+      data: {
+        targetId: req.params.id,
+        requestedBy: actor.id,
+        payload: JSON.stringify(requested),
+        status: 'Pending',
+        stamp: stampPending,
+        note: req.body.note || null
+      }
     });
-    await audit(actor, 'permissions-change', 'employee', emp.id, JSON.stringify(requested));
-    await notify(emp.id, 'Your access changed', 'Your module access or capabilities were updated. Changes apply immediately.', 'permission');
-    res.json(emp);
+    await audit(actor, 'permissions-escalate', 'permission-request', pr.id, stampPending);
+    // Notify target's manager and all admins
+    const admins = await prisma.employee.findMany({ where: { role: 'admin', status: 'active' }, select: { id: true } });
+    for (const a of admins) {
+      await notify(a.id, 'Permission change needs stamp',
+        `${actor.name} requested access change for ${target.name}. Review Permissions → Escalations.`, 'permission');
+    }
+    if (target.managerId && target.managerId !== actor.id) {
+      await notify(target.managerId, 'Permission change needs stamp',
+        `${actor.name} requested access change for ${target.name}.`, 'permission');
+    }
+    res.json({ applied: false, escalated: true, request: pr, message: 'Submitted for manager/admin stamp. Not applied yet.' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to update permissions' });
   }
 });

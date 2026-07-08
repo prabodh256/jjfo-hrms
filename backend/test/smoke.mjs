@@ -213,6 +213,39 @@ async function main() {
   const search = await api('GET', '/api/search?q=Rajesh', { cookie: admin.cookie });
   check('T-SEARCH global search finds employee', search.status === 200 && search.json?.employees?.some(e => e.name?.includes('Rajesh')));
 
+  // Payroll locked by default for non-admin without module
+  const payDeny = await api('GET', '/api/payroll', { cookie: priya.cookie });
+  check('T-PAY  payroll denied without module → 403', payDeny.status === 403, `status=${payDeny.status}`);
+  const payAdmin = await api('GET', '/api/payroll', { cookie: admin.cookie });
+  check('T-PAY  admin payroll allowed', payAdmin.status === 200);
+
+  // Bulk leave allotment (admin)
+  const bulk = await api('POST', '/api/leave-balances/bulk', {
+    cookie: admin.cookie,
+    body: { annual: 18, sick: 8, casual: 6, all: true }
+  });
+  check('T-LEAVE bulk allotment all staff', bulk.status === 200 && bulk.json?.updated >= 1, `status=${bulk.status}`);
+
+  // Leave trail visible to manager (Priya sees Sneha EMP004)
+  const trail = await api('GET', '/api/leaves', { cookie: priya.cookie });
+  check('T-LEAVE manager sees team trail', trail.status === 200 && Array.isArray(trail.json) && trail.json.some(l => l.employeeId === 'EMP004' || l.employeeId === 'EMP002'), `n=${trail.json?.length}`);
+
+  // Permission escalate (non-admin) then stamp — only modules granter holds
+  const esc = await api('PUT', '/api/employees/EMP003/permissions', {
+    cookie: priya.cookie,
+    body: { permissions: { modules: { directory: 'view', onboarding: 'view' }, caps: { approveLeaves: true } } }
+  });
+  check('T-PERM non-admin escalates (not applied)', esc.status === 200 && esc.json?.escalated === true, JSON.stringify(esc.json));
+  const reqs = await api('GET', '/api/permissions/requests', { cookie: admin.cookie });
+  const pend = reqs.json?.find?.(r => r.status === 'Pending' && r.targetId === 'EMP003');
+  check('T-PERM pending escalation listed', !!pend, `n=${reqs.json?.length}`);
+  if (pend) {
+    const dec = await api('PUT', `/api/permissions/requests/${pend.id}/decide`, { cookie: admin.cookie, body: { approve: true } });
+    check('T-PERM admin stamp approve', dec.status === 200 && dec.json?.status === 'Approved', `status=${dec.status}`);
+  } else {
+    check('T-PERM admin stamp approve', false, 'no pending');
+  }
+
   // ---- Gap build: audit, notifications, attendance, holidays, lifecycle, reports ----
   const audit1 = await api('GET', '/api/audit?entity=employee', { cookie: admin.cookie });
   check('T-AUD  audit rows for employee actions', audit1.status === 200 && audit1.json.length > 0, `status=${audit1.status}`);

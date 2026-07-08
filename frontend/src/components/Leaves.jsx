@@ -43,17 +43,18 @@ function BalanceCards({ bal }) {
 const REG_EMPTY = { date: '', actualCheckIn: '', actualCheckOut: '', reason: '' };
 
 function Leaves() {
-  const { leaves, fetchLeaves, createLeave, approveLeave, rejectLeave, cancelLeave, leaveBalances, fetchLeaveBalances, updateLeaveBalance, employees, fetchEmployees, user,
+  const { leaves, fetchLeaves, createLeave, approveLeave, rejectLeave, cancelLeave, leaveBalances, fetchLeaveBalances, updateLeaveBalance, bulkLeaveAllotment, employees, fetchEmployees, user,
     attendance, fetchAttendance, clockIn, clockOut, regularize, regularizations, fetchRegularizations, decideRegularization, holidays, fetchHolidays } = useStore();
   const isAdmin = user?.role === 'admin';
   const canApprove = isAdmin || hasCap(user, 'approveLeaves');
-  const canAdjust = isAdmin || hasCap(user, 'manageHierarchy');
+  const canAdjust = isAdmin;
 
   const [tab, setTab] = useState('balances');
   const [form, setForm] = useState(EMPTY);
   const [msg, setMsg] = useState('');
   const [balEdit, setBalEdit] = useState({});
   const [reg, setReg] = useState(REG_EMPTY);
+  const [bulk, setBulk] = useState({ annual: 15, sick: 7, casual: 7, all: true, selected: [] });
 
   useEffect(() => {
     fetchLeaves(); fetchLeaveBalances(); fetchEmployees(); fetchHolidays();
@@ -72,7 +73,9 @@ function Leaves() {
   };
 
   const myBal = leaveBalances.find(b => b.employeeId === user?.id);
-  const visibleLeaves = isAdmin ? leaves : leaves.filter(l => l.employeeId === user?.id);
+  // Server already scopes trail (own + team for managers + all for admin)
+  const visibleLeaves = leaves;
+  const teamTrail = leaves.filter(l => l.employeeId !== user?.id);
   const pendingForMe = leaves.filter(l => l.status === 'Pending' && (isAdmin || l.currentApproverId === user?.id));
 
   const submit = async (e) => {
@@ -81,7 +84,23 @@ function Leaves() {
       const payload = { ...form, durationDays: days(form.startDate, form.endDate) };
       if (!isAdmin) { delete payload.employeeId; delete payload.status; }
       await createLeave(payload);
-      setForm(EMPTY); setMsg('Leave submitted.'); setTab('history');
+      setForm(EMPTY);
+      setMsg('Leave submitted — days reserved from balance immediately (released if rejected/cancelled).');
+      setTab('history');
+      await fetchLeaveBalances();
+    } catch (err) { setMsg(err.message); }
+  };
+
+  const runBulk = async (e) => {
+    e.preventDefault(); setMsg('');
+    try {
+      const body = {
+        annual: Number(bulk.annual), sick: Number(bulk.sick), casual: Number(bulk.casual),
+        all: bulk.all,
+        employeeIds: bulk.all ? [] : bulk.selected
+      };
+      const r = await bulkLeaveAllotment(body);
+      setMsg(`Year allotment applied to ${r?.updated || 0} employee(s).`);
     } catch (err) { setMsg(err.message); }
   };
 
@@ -97,44 +116,52 @@ function Leaves() {
 
   return (
     <div className="view-panel active-view">
-      <div className="view-header"><div><h2>Leave &amp; Attendance</h2><p>Balances, applications and hierarchical approvals.</p></div></div>
+      <div className="view-header"><div><h2>Leave &amp; Attendance</h2><p>Balances reserve on apply; managers see team trail. Admin sets yearly allotments.</p></div></div>
       {msg && <p>{msg}</p>}
 
       <div className="tab-navigation">
-        <button className={`tab-btn ${tab === 'balances' ? 'active' : ''}`} onClick={() => setTab('balances')}>Balances</button>
-        <button className={`tab-btn ${tab === 'apply' ? 'active' : ''}`} onClick={() => setTab('apply')}>{isAdmin ? 'Add Leave' : 'Apply Leave'}</button>
-        <button className={`tab-btn ${tab === 'attendance' ? 'active' : ''}`} onClick={() => setTab('attendance')}>Attendance {pendingRegs.length && canApprove ? `(${pendingRegs.length})` : ''}</button>
-        {canApprove && <button className={`tab-btn ${tab === 'approvals' ? 'active' : ''}`} onClick={() => setTab('approvals')}>Approvals {pendingForMe.length ? `(${pendingForMe.length})` : ''}</button>}
-        <button className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>History</button>
+        <button type="button" className={`tab-btn ${tab === 'balances' ? 'active' : ''}`} onClick={() => setTab('balances')}>Balances</button>
+        {isAdmin && <button type="button" className={`tab-btn ${tab === 'allot' ? 'active' : ''}`} onClick={() => setTab('allot')}>Year allotment</button>}
+        <button type="button" className={`tab-btn ${tab === 'apply' ? 'active' : ''}`} onClick={() => setTab('apply')}>{isAdmin ? 'Add Leave' : 'Apply Leave'}</button>
+        <button type="button" className={`tab-btn ${tab === 'attendance' ? 'active' : ''}`} onClick={() => setTab('attendance')}>Attendance {pendingRegs.length && canApprove ? `(${pendingRegs.length})` : ''}</button>
+        {canApprove && <button type="button" className={`tab-btn ${tab === 'approvals' ? 'active' : ''}`} onClick={() => setTab('approvals')}>Approvals {pendingForMe.length ? `(${pendingForMe.length})` : ''}</button>}
+        <button type="button" className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>Leave trail</button>
       </div>
 
       {tab === 'balances' && (
         <div>
           <BalanceCards bal={myBal} />
-          {canAdjust && (
+          {myBal && (
+            <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 12 }}>
+              Used includes pending reservations. Pending: A{myBal.annual.pending || 0} / S{myBal.sick.pending || 0} / C{myBal.casual.pending || 0}.
+            </p>
+          )}
+          {(isAdmin || canApprove) && (
             <div className="table-responsive">
               <table className="table">
-                <thead><tr><th>Employee</th><th>Annual</th><th>Sick</th><th>Casual</th><th>Adjust totals</th></tr></thead>
+                <thead><tr><th>Employee</th><th>Annual</th><th>Sick</th><th>Casual</th>{canAdjust && <th>Adjust totals</th>}</tr></thead>
                 <tbody>
                   {leaveBalances.map(b => {
                     const e = balEdit[b.employeeId] || {};
                     return (
                       <tr key={b.employeeId}>
                         <td><strong>{b.name}</strong></td>
-                        <td>{b.annual.available} / {b.annual.total} <small>({b.annual.used} used)</small></td>
+                        <td>{b.annual.available} / {b.annual.total} <small>({b.annual.used} used{b.annual.pending ? `, ${b.annual.pending} pend` : ''})</small></td>
                         <td>{b.sick.available} / {b.sick.total} <small>({b.sick.used} used)</small></td>
                         <td>{b.casual.available} / {b.casual.total} <small>({b.casual.used} used)</small></td>
-                        <td>
-                          <div className="action-btn-group">
-                            <input className="form-control" style={{ width: '64px' }} type="number" title="Annual"
-                              value={e.annual ?? b.annual.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, annual: Number(ev.target.value) } })} />
-                            <input className="form-control" style={{ width: '64px' }} type="number" title="Sick"
-                              value={e.sick ?? b.sick.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, sick: Number(ev.target.value) } })} />
-                            <input className="form-control" style={{ width: '64px' }} type="number" title="Casual"
-                              value={e.casual ?? b.casual.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, casual: Number(ev.target.value) } })} />
-                            <button className="btn btn-sm btn-primary" onClick={() => saveBalance(b)}>Save</button>
-                          </div>
-                        </td>
+                        {canAdjust && (
+                          <td>
+                            <div className="action-btn-group">
+                              <input className="form-control" style={{ width: '64px' }} type="number" title="Annual"
+                                value={e.annual ?? b.annual.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, annual: Number(ev.target.value) } })} />
+                              <input className="form-control" style={{ width: '64px' }} type="number" title="Sick"
+                                value={e.sick ?? b.sick.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, sick: Number(ev.target.value) } })} />
+                              <input className="form-control" style={{ width: '64px' }} type="number" title="Casual"
+                                value={e.casual ?? b.casual.total} onChange={ev => setBalEdit({ ...balEdit, [b.employeeId]: { ...e, casual: Number(ev.target.value) } })} />
+                              <button type="button" className="btn btn-sm btn-primary" onClick={() => saveBalance(b)}>Save</button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -142,6 +169,49 @@ function Leaves() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'allot' && isAdmin && (
+        <div className="glass p-6" style={{ maxWidth: 560 }}>
+          <h3>Year-start leave allotment</h3>
+          <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+            Set Annual / Sick / Casual totals for <strong>all active employees</strong> or a selected subset.
+          </p>
+          <form onSubmit={runBulk} style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+            <div className="form-grid">
+              <div className="form-group"><label>Annual</label>
+                <input className="form-control" type="number" min={0} value={bulk.annual} onChange={e => setBulk({ ...bulk, annual: e.target.value })} /></div>
+              <div className="form-group"><label>Sick</label>
+                <input className="form-control" type="number" min={0} value={bulk.sick} onChange={e => setBulk({ ...bulk, sick: e.target.value })} /></div>
+              <div className="form-group"><label>Casual</label>
+                <input className="form-control" type="number" min={0} value={bulk.casual} onChange={e => setBulk({ ...bulk, casual: e.target.value })} /></div>
+            </div>
+            <label className="perm-item">
+              <input type="checkbox" checked={bulk.all} onChange={e => setBulk({ ...bulk, all: e.target.checked })} />
+              <span>Apply to all active employees</span>
+            </label>
+            {!bulk.all && (
+              <div className="perm-grid">
+                {employees.filter(e => e.status !== 'inactive').map(emp => (
+                  <label key={emp.id} className="perm-item">
+                    <input
+                      type="checkbox"
+                      checked={bulk.selected.includes(emp.id)}
+                      onChange={() => setBulk({
+                        ...bulk,
+                        selected: bulk.selected.includes(emp.id)
+                          ? bulk.selected.filter(id => id !== emp.id)
+                          : [...bulk.selected, emp.id]
+                      })}
+                    />
+                    <span>{emp.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <button type="submit" className="btn btn-primary">Apply allotment</button>
+          </form>
         </div>
       )}
 
@@ -280,17 +350,22 @@ function Leaves() {
 
       {tab === 'history' && (
         <div className="table-responsive">
+          {(isAdmin || canApprove) && teamTrail.length > 0 && (
+            <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
+              Showing your leaves and team trail ({teamTrail.length} team row(s)). Days are reserved when applied.
+            </p>
+          )}
           <table className="table">
             <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th><th>Approval</th><th></th></tr></thead>
             <tbody>
               {visibleLeaves.length === 0 ? <tr><td colSpan="8">No leave records.</td></tr> : visibleLeaves.map(l => (
-                <tr key={l.id}>
+                <tr key={l.id} className={l.employeeId !== user?.id ? 'trail-team-row' : ''}>
                   <td><strong>{l.employee?.name || l.employeeId}</strong></td>
                   <td>{l.leaveType}</td><td>{l.startDate} → {l.endDate}</td><td>{l.durationDays}</td><td>{l.reason}</td>
                   <td><StatusBadge l={l} /></td>
                   <td><Progress l={l} /></td>
                   <td>{((l.employeeId === user?.id && l.status === 'Pending') || (isAdmin && ['Pending', 'Approved'].includes(l.status))) && (
-                    <button className="btn btn-sm btn-secondary" onClick={async () => { try { await cancelLeave(l.id); } catch (e) { setMsg(e.message); } }}>Cancel</button>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={async () => { try { await cancelLeave(l.id); await fetchLeaveBalances(); } catch (e) { setMsg(e.message); } }}>Cancel</button>
                   )}</td>
                 </tr>
               ))}

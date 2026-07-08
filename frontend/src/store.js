@@ -109,13 +109,26 @@ const useStore = create((set, get) => ({
     if (me.user) set({ user: me.user });
   },
   updatePermissions: async (id, permissions) => {
-    await safe(() => apiMutate(`/api/employees/${id}/permissions`, 'PUT', { permissions }));
-    toastSuccess('Permissions updated');
+    const res = await safe(() => apiMutate(`/api/employees/${id}/permissions`, 'PUT', { permissions }));
+    if (res?.escalated) toastSuccess('Escalated for stamp');
+    else toastSuccess('Permissions stamped & applied');
     await get().fetchEmployees();
+    return res;
   },
   fetchGrantable: async () => {
     try { set({ grantable: await apiGet('/api/permissions/grantable') }); }
     catch (e) { console.error(e); }
+  },
+  permRequests: [],
+  fetchPermRequests: async () => {
+    try { set({ permRequests: await apiGet('/api/permissions/requests') }); }
+    catch (e) { console.error(e); set({ permRequests: [] }); }
+  },
+  decidePermRequest: async (id, approve, note) => {
+    await safe(() => apiMutate(`/api/permissions/requests/${id}/decide`, 'PUT', { approve, note }));
+    toastSuccess(approve ? 'Stamped approved' : 'Rejected');
+    await get().fetchPermRequests();
+    await get().fetchEmployees();
   },
 
   // ---- Leave management ----
@@ -145,6 +158,12 @@ const useStore = create((set, get) => ({
   updateLeaveBalance: async (id, balance) => {
     await apiMutate(`/api/leave-balances/${id}`, 'PUT', balance);
     await get().fetchLeaveBalances();
+  },
+  bulkLeaveAllotment: async (payload) => {
+    const res = await safe(() => apiMutate('/api/leave-balances/bulk', 'POST', payload));
+    toastSuccess(`Updated ${res?.updated || 0} employee(s)`);
+    await get().fetchLeaveBalances();
+    return res;
   },
 
   // ---- Assets ----
