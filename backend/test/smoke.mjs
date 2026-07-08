@@ -24,14 +24,16 @@ async function login(email, password) {
   return { status: res.status, cookie: cookieFrom(res), json: await res.json().catch(() => ({})) };
 }
 
-async function api(method, path, { cookie = '', body, csrf = true } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+async function api(method, path, { cookie = '', body, csrf = true, extraHeaders = {} } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...extraHeaders };
   if (csrf) headers['X-Requested-With'] = 'XMLHttpRequest';
   if (cookie) headers.Cookie = cookie;
   const res = await fetch(`${BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   let json = null; try { json = await res.json(); } catch { /* no body */ }
   return { status: res.status, json };
 }
+
+const hardDel = { 'X-Confirm-Hard-Delete': 'true' };
 
 async function main() {
   console.log(`\nJJFO HRMS smoke test → ${BASE}\n`);
@@ -181,7 +183,10 @@ async function main() {
   check('T-PWD  admin reset → 200', rst.status === 200, `status=${rst.status}`);
   const t3 = await login(tmpEmail, 'resetpass123');
   check('T-PWD  login with reset password', t3.status === 200, `status=${t3.status}`);
-  await api('DELETE', `/api/employees/${tmp.json?.id}`, { cookie: admin.cookie });
+  // Password change revokes sessions — t2 cookie must fail; t3 used reset password after re-login.
+  const afterChg = await api('GET', '/api/employees', { cookie: t1.cookie });
+  check('T-PWD  session revoked after password change → 401', afterChg.status === 401, `status=${afterChg.status}`);
+  await api('DELETE', `/api/employees/${tmp.json?.id}`, { cookie: admin.cookie, extraHeaders: hardDel });
   const ghost = await api('GET', '/api/employees', { cookie: t3.cookie });
   check('T-SEC  deleted-user token rejected → 401', ghost.status === 401, `status=${ghost.status}`);
 
@@ -191,7 +196,7 @@ async function main() {
     method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', Cookie: vikram.cookie }, body: fd
   });
   const upj = await up.json().catch(() => ({}));
-  check('T-FILE owner uploads while editable → 200', up.status === 200 && upj.filename === 'educationCertificate.pdf', `status=${up.status} ${JSON.stringify(upj)}`);
+  check('T-FILE owner uploads while editable → 200', up.status === 200 && String(upj.filename || '').startsWith('educationCertificate.'), `status=${up.status} ${JSON.stringify(upj)}`);
   const dl = await fetch(`${BASE}/api/files/EMP005/educationCertificate`, { headers: { Cookie: admin.cookie } });
   const bytes = await dl.text();
   check('T-FILE admin opens the attachment', dl.status === 200 && bytes.includes('SMOKE-PDF-BYTES'), `status=${dl.status}`);
@@ -199,6 +204,14 @@ async function main() {
   const dl403 = await fetch(`${BASE}/api/files/EMP005/educationCertificate`, { headers: { Cookie: amit.cookie } });
   check('T-FILE unrelated employee download → 403', dl403.status === 403, `status=${dl403.status}`);
   if (vtk.json?.id) await api('DELETE', `/api/helpdesk/${vtk.json.id}`, { cookie: admin.cookie });
+
+  // Health + global search
+  const health = await fetch(`${BASE}/health`).then(r => r.json().then(j => ({ status: r.status, json: j })));
+  check('T-OPS  /health ok', health.status === 200 && health.json?.status === 'ok');
+  const ready = await fetch(`${BASE}/ready`).then(r => r.json().then(j => ({ status: r.status, json: j })));
+  check('T-OPS  /ready ok', ready.status === 200 && ready.json?.status === 'ready');
+  const search = await api('GET', '/api/search?q=Rajesh', { cookie: admin.cookie });
+  check('T-SEARCH global search finds employee', search.status === 200 && search.json?.employees?.some(e => e.name?.includes('Rajesh')));
 
   // ---- Gap build: audit, notifications, attendance, holidays, lifecycle, reports ----
   const audit1 = await api('GET', '/api/audit?entity=employee', { cookie: admin.cookie });
@@ -292,15 +305,15 @@ async function main() {
   check('T-REP  plain employee → 403', repDeny.status === 403, `status=${repDeny.status}`);
 
   // Gap-build temp cleanup
-  if (attEmp.json?.id) await api('DELETE', `/api/employees/${attEmp.json.id}`, { cookie: admin.cookie });
-  if (dEmp.json?.id) await api('DELETE', `/api/employees/${dEmp.json.id}`, { cookie: admin.cookie });
+  if (attEmp.json?.id) await api('DELETE', `/api/employees/${attEmp.json.id}`, { cookie: admin.cookie, extraHeaders: hardDel });
+  if (dEmp.json?.id) await api('DELETE', `/api/employees/${dEmp.json.id}`, { cookie: admin.cookie, extraHeaders: hardDel });
   if (stockAsset.json?.id) await api('DELETE', `/api/assets/${stockAsset.json.id}`, { cookie: admin.cookie });
 
   // ---- Cleanup (self-cleaning) ----
   if (lvId) await api('DELETE', `/api/leaves/${lvId}`, { cookie: admin.cookie });
   if (assetId) await api('DELETE', `/api/assets/${assetId}`, { cookie: admin.cookie });
   if (tkId) await api('DELETE', `/api/helpdesk/${tkId}`, { cookie: admin.cookie });
-  if (subId) await api('DELETE', `/api/employees/${subId}`, { cookie: admin.cookie });
+  if (subId) await api('DELETE', `/api/employees/${subId}`, { cookie: admin.cookie, extraHeaders: hardDel });
   await api('PUT', '/api/me/preferences', { cookie: admin.cookie, body: { preferences: { theme: 'dark', font: 'Outfit', fontSize: 'medium' } } });
 
   // ---- Optional rate-limit burst (trips limiter ~15 min) ----

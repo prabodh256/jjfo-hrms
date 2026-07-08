@@ -3,64 +3,40 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { authenticate, authorize } = require('../middleware/auth');
 const prisma = require('../prisma/client');
+const {
+  parseJson, effectivePerms, isSubset, normalizePerms, isSupervisor,
+  redactEmployee, redactEmployees
+} = require('../lib/perms');
+const { audit, notify } = require('../lib/audit');
+const { parsePagination, paginated } = require('../lib/pagination');
+const { z, monthSchema, dateSchema } = require('../lib/validate');
+const { revokeAllUserSessions } = require('../lib/sessions');
+const { getSetting, setSetting, getAllSettings, isOnTime } = require('../lib/settings');
 const router = express.Router();
 
 const LEAVE_TYPE_KEY = { 'Annual Leave': 'annual', 'Sick Leave': 'sick', 'Casual Leave': 'casual' };
-
-// Canonical permission vocabulary (kept in sync with frontend/src/permissions.js).
-const ALL_MODULES = ['dashboard', 'directory', 'onboarding', 'leaves', 'payroll', 'assets', 'helpdesk', 'permissions', 'gsync', 'settings', 'audit', 'reports'];
-const ALL_CAPS = ['createUsers', 'approveLeaves', 'accessFinancials', 'manageHierarchy', 'moderateHelpdesk'];
-// Self-service modules every employee always retains.
-const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings'];
-
 const safeName = (name) => (name || '').replace(/\s+/g, '');
-const parseJson = (s) => { try { return s ? JSON.parse(s) : {}; } catch { return {}; } };
-
-// Resolve an employee's effective permissions. Admins implicitly hold everything.
-function effectivePerms(emp) {
-  if (!emp) return { modules: [], caps: {} };
-  if (emp.role === 'admin') {
-    return { modules: [...ALL_MODULES], caps: Object.fromEntries(ALL_CAPS.map(c => [c, true])) };
-  }
-  const p = parseJson(emp.permissions);
-  const stored = Array.isArray(p.modules) ? p.modules.filter(m => ALL_MODULES.includes(m)) : [];
-  const modules = Array.from(new Set([...BASE_MODULES, ...stored]));
-  const caps = (p.caps && typeof p.caps === 'object') ? p.caps : {
-    accessFinancials: !!p.accessFinancials, manageHierarchy: !!p.manageHierarchy, moderateHelpdesk: !!p.moderateHelpdesk
-  };
-  return { modules, caps };
-}
-
-// A grant is valid only if it is a SUBSET of what the granter holds.
-function isSubset(granted, granter) {
-  const gm = new Set(granter.modules);
-  for (const m of (granted.modules || [])) if (!gm.has(m)) return false;
-  for (const c of Object.keys(granted.caps || {})) if (granted.caps[c] && !granter.caps[c]) return false;
-  return true;
-}
-
-// Normalize an incoming permissions object to the canonical shape.
-function normalizePerms(input) {
-  const modules = Array.isArray(input?.modules) ? input.modules.filter(m => ALL_MODULES.includes(m)) : [];
-  const caps = {};
-  for (const c of ALL_CAPS) caps[c] = !!(input?.caps && input.caps[c]);
-  return { modules, caps };
-}
 
 async function loadActor(req) {
   return prisma.employee.findUnique({ where: { id: req.user.id } });
 }
-
-// Admin or a delegate with the createUsers capability may manage others.
-const isSupervisor = (actor) => !!actor && (actor.role === 'admin' || effectivePerms(actor).caps.createUsers);
 
 // ---- Real document storage (backend/uploads/<empId>/<docKey>.<ext>) ----
 const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
 const DOC_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_-]{1,40}$/;
 const EMP_ID_RE = /^EMP\d{3,}$/;
 const FILE_EXTS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx']);
+const FILE_MIMES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/octet-stream' // some browsers send this for doc/pdf
+]);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -69,11 +45,19 @@ const upload = multer({
       fs.mkdirSync(dir, { recursive: true });
       cb(null, dir);
     },
-    // One file per docKey; re-uploads overwrite.
-    filename: (req, file, cb) => cb(null, req.params.docKey + path.extname(file.originalname).toLowerCase())
+    // Randomize filename to avoid collisions / path tricks; keep docKey prefix for lookup.
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const rand = crypto.randomBytes(6).toString('hex');
+      cb(null, `${req.params.docKey}.${rand}${ext}`);
+    }
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, FILE_EXTS.has(path.extname(file.originalname).toLowerCase()))
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const ok = FILE_EXTS.has(ext) && FILE_MIMES.has((file.mimetype || '').toLowerCase());
+    cb(ok ? null : new Error('Invalid file type'), ok);
+  }
 });
 
 // Files are private: the employee themselves (uploads only while onboarding is
@@ -94,29 +78,6 @@ function fileAccess(forUpload) {
       next();
     } catch (e) { res.status(500).json({ error: 'File access check failed' }); }
   };
-}
-
-// ---- Audit trail + in-app notifications (best-effort; never block the action) ----
-async function audit(actorRef, action, entity, entityId, detail) {
-  try {
-    let name = actorRef?.name;
-    if (!name && actorRef?.id) {
-      const a = await prisma.employee.findUnique({ where: { id: actorRef.id }, select: { name: true } });
-      name = a?.name;
-    }
-    await prisma.auditLog.create({ data: {
-      actorId: actorRef?.id || 'system', actorName: name || actorRef?.id || 'system',
-      action, entity, entityId: entityId ? String(entityId) : null,
-      detail: detail ? String(detail).slice(0, 500) : null
-    } });
-  } catch (e) { console.error('audit failed:', e.message); }
-}
-
-async function notify(userId, title, body, kind = 'general') {
-  try {
-    if (!userId) return;
-    await prisma.notification.create({ data: { userId, title, body: String(body || '').slice(0, 500), kind } });
-  } catch (e) { console.error('notify failed:', e.message); }
 }
 
 async function notifySupervisors(title, body, kind) {
@@ -223,14 +184,36 @@ router.get('/dashboard/stats', authenticate, async (req, res) => {
   }
 });
 
-// Employees (Directory)
+// Employees (Directory) — password omitted; salary redacted; optional pagination.
 router.get('/employees', authenticate, async (req, res) => {
   try {
-    // Never expose password hashes to the client. Deactivated employees are
-    // hidden unless explicitly requested.
+    const actor = await loadActor(req);
     const where = req.query.includeInactive === '1' ? {} : { status: { not: 'inactive' } };
-    const employees = await prisma.employee.findMany({ where, omit: { password: true } });
-    res.json(employees);
+    if (req.query.q) {
+      const q = String(req.query.q);
+      where.OR = [
+        { name: { contains: q } },
+        { email: { contains: q } },
+        { department: { contains: q } },
+        { designation: { contains: q } },
+        { id: { contains: q } }
+      ];
+    }
+    const wantPage = req.query.page != null || req.query.limit != null;
+    if (wantPage) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [total, employees] = await Promise.all([
+        prisma.employee.count({ where }),
+        prisma.employee.findMany({
+          where, omit: { password: true }, skip, take: limit, orderBy: { name: 'asc' }
+        })
+      ]);
+      return res.json(paginated(redactEmployees(employees, actor), total, page, limit));
+    }
+    const employees = await prisma.employee.findMany({
+      where, omit: { password: true }, orderBy: { name: 'asc' }
+    });
+    res.json(redactEmployees(employees, actor));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch employees' });
   }
@@ -246,6 +229,7 @@ router.put('/employees/:id/deactivate', authenticate, async (req, res) => {
     if (!target) return res.status(404).json({ error: 'Employee not found' });
     if (target.role === 'admin' && actor.role !== 'admin') return res.status(403).json({ error: 'Cannot deactivate an admin.' });
     const emp = await prisma.employee.update({ where: { id: req.params.id }, data: { status: 'inactive' }, omit: { password: true } });
+    await revokeAllUserSessions(emp.id);
     await audit(actor, 'deactivate', 'employee', emp.id, `Deactivated ${target.name}`);
     res.json(emp);
   } catch (error) {
@@ -301,46 +285,60 @@ router.post('/employees', authenticate, async (req, res) => {
       data.managerId = data.managerId || actor.id;
     }
     data.id = data.id || await nextEmployeeId();
-    // New hires get a default password; never persist or echo it in plaintext.
+    // New hires get a default password (password123) until they change it.
     data.password = await bcrypt.hash(data.password || 'password123', 12);
-    const employee = await prisma.employee.create({ data, omit: { password: true } });
-    // Provision the new hire everywhere: leave balance + their Drive vault folder.
-    await prisma.leaveBalance.upsert({
-      where: { employeeId: employee.id }, update: {},
-      create: { employeeId: employee.id, annual: 15, sick: 7, casual: 7 }
+    const employee = await prisma.$transaction(async (tx) => {
+      const emp = await tx.employee.create({ data, omit: { password: true } });
+      await tx.leaveBalance.upsert({
+        where: { employeeId: emp.id }, update: {},
+        create: { employeeId: emp.id, annual: 15, sick: 7, casual: 7 }
+      });
+      return emp;
     });
     await syncEmployeeDrive(employee);
     await audit(actor, 'create', 'employee', employee.id, `Created ${employee.name} (${employee.email})`);
-    res.json(employee);
+    res.json(redactEmployee(employee, actor));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to create employee' });
   }
 });
 
-// Remove an employee and all dependent records (admin).
+// Hard-delete is test/admin only — prefer deactivate. Requires ALLOW_HARD_DELETE=1
+// or header X-Confirm-Hard-Delete: true.
 router.delete('/employees/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
+    const allowed = process.env.ALLOW_HARD_DELETE === '1' ||
+      req.get('X-Confirm-Hard-Delete') === 'true';
+    if (!allowed) {
+      return res.status(400).json({
+        error: 'Hard delete disabled. Use deactivate, or send X-Confirm-Hard-Delete: true (test only).'
+      });
+    }
     const id = req.params.id;
     if (id === req.user.id) return res.status(400).json({ error: 'You cannot remove your own account.' });
-    // Atomic cascade: children first, then the employee — all-or-nothing.
+    await revokeAllUserSessions(id);
+    // Cascades via Prisma schema relations where defined; explicit cleanup for orphans.
     await prisma.$transaction([
+      prisma.session.deleteMany({ where: { userId: id } }),
       prisma.ticketReply.deleteMany({ where: { OR: [{ senderId: id }, { ticket: { employeeId: id } }] } }),
       prisma.helpdeskTicket.deleteMany({ where: { employeeId: id } }),
       prisma.leave.deleteMany({ where: { employeeId: id } }),
       prisma.attendance.deleteMany({ where: { employeeId: id } }),
       prisma.attendanceRegularization.deleteMany({ where: { employeeId: id } }),
-      prisma.asset.deleteMany({ where: { employeeId: id } }),
+      prisma.asset.updateMany({ where: { employeeId: id }, data: { employeeId: null, status: 'In Stock' } }),
       prisma.payroll.deleteMany({ where: { employeeId: id } }),
       prisma.taxDeclaration.deleteMany({ where: { employeeId: id } }),
       prisma.salaryAdvance.deleteMany({ where: { employeeId: id } }),
       prisma.goal.deleteMany({ where: { employeeId: id } }),
       prisma.leaveBalance.deleteMany({ where: { employeeId: id } }),
+      prisma.notification.deleteMany({ where: { userId: id } }),
       prisma.employee.delete({ where: { id } })
     ]);
     await audit(req.user, 'delete', 'employee', id, 'Hard delete with cascade');
     res.json({ message: 'Employee removed' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to remove employee' });
   }
 });
@@ -647,7 +645,8 @@ router.post('/attendance/clock-in', authenticate, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Already clocked in today.' });
     const now = new Date();
     const hhmm = now.toTimeString().slice(0, 5);
-    const status = (now.getHours() < 9 || (now.getHours() === 9 && now.getMinutes() <= 15)) ? 'On Time' : 'Late';
+    const threshold = await getSetting('lateThreshold');
+    const status = isOnTime(hhmm, threshold || '09:15') ? 'On Time' : 'Late';
     const log = await prisma.attendance.create({ data: { employeeId: req.user.id, date: today, checkIn: hhmm, status } });
     res.json(log);
   } catch (e) { res.status(500).json({ error: 'Failed to clock in' }); }
@@ -754,7 +753,13 @@ router.delete('/holidays/:id', authenticate, authorize(['admin']), async (req, r
 // ===================== Notifications (in-app) =====================
 router.get('/notifications', authenticate, async (req, res) => {
   try {
-    const rows = await prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { at: 'desc' }, take: 50 });
+    const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
+    const where = { userId: req.user.id };
+    const [total, rows] = await Promise.all([
+      prisma.notification.count({ where }),
+      prisma.notification.findMany({ where, orderBy: { at: 'desc' }, skip, take: limit })
+    ]);
+    if (req.query.page != null) return res.json(paginated(rows, total, page, limit));
     res.json(rows);
   } catch (e) { res.status(500).json({ error: 'Failed to fetch notifications' }); }
 });
@@ -780,7 +785,13 @@ router.get('/audit', authenticate, async (req, res) => {
     const where = {};
     if (req.query.entity) where.entity = String(req.query.entity);
     if (req.query.actorId) where.actorId = String(req.query.actorId);
-    res.json(await prisma.auditLog.findMany({ where, orderBy: { at: 'desc' }, take: 200 }));
+    const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 100, maxLimit: 500 });
+    const [total, rows] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({ where, orderBy: { at: 'desc' }, skip, take: limit })
+    ]);
+    if (req.query.page != null) return res.json(paginated(rows, total, page, limit));
+    res.json(rows);
   } catch (e) { res.status(500).json({ error: 'Failed to fetch audit log' }); }
 });
 
@@ -1185,7 +1196,7 @@ router.put('/employees/:id', authenticate, authorize(['admin']), async (req, res
   }
 });
 
-// Change own password (requires the current one).
+// Change own password (requires the current one). Revokes all sessions.
 router.put('/me/password', authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -1196,8 +1207,9 @@ router.put('/me/password', authenticate, async (req, res) => {
     const ok = await bcrypt.compare(String(currentPassword || ''), me.password);
     if (!ok) return res.status(401).json({ error: 'Current password is incorrect.' });
     await prisma.employee.update({ where: { id: me.id }, data: { password: await bcrypt.hash(String(newPassword), 12) } });
+    await revokeAllUserSessions(me.id);
     await audit(req.user, 'password-change', 'employee', me.id);
-    res.json({ message: 'Password changed' });
+    res.json({ message: 'Password changed. Please sign in again.' });
   } catch (e) {
     res.status(500).json({ error: 'Failed to change password' });
   }
@@ -1211,6 +1223,7 @@ router.put('/employees/:id/password', authenticate, authorize(['admin']), async 
       return res.status(400).json({ error: 'New password must be at least 8 characters.' });
     }
     await prisma.employee.update({ where: { id: req.params.id }, data: { password: await bcrypt.hash(String(newPassword), 12) } });
+    await revokeAllUserSessions(req.params.id);
     await audit(req.user, 'password-reset', 'employee', req.params.id);
     res.json({ message: 'Password reset' });
   } catch (e) {
@@ -1220,17 +1233,32 @@ router.put('/employees/:id/password', authenticate, authorize(['admin']), async 
 
 // Upload a real document file; also records it in the employee's documents JSON
 // and mirrors it into their Drive vault.
-router.post('/files/:empId/:docKey', authenticate, fileAccess(true), upload.single('file'), async (req, res) => {
+router.post('/files/:empId/:docKey', authenticate, fileAccess(true), (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload rejected.' });
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file received (5MB max; pdf/doc/docx/png/jpg).' });
     const emp = await prisma.employee.findUnique({ where: { id: req.params.empId } });
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    // Remove previous files for this docKey
+    const dir = path.join(UPLOAD_ROOT, req.params.empId);
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith(req.params.docKey + '.') && f !== req.file.filename) {
+          try { fs.unlinkSync(path.join(dir, f)); } catch { /* ignore */ }
+        }
+      }
+    }
     const docs = parseJson(emp.documents);
     docs[req.params.docKey] = req.file.filename;
     const updated = await prisma.employee.update({
       where: { id: emp.id }, data: { documents: JSON.stringify(docs) }, omit: { password: true }
     });
     await syncEmployeeDrive(updated);
+    await audit(req.user, 'upload', 'file', emp.id, `${req.params.docKey} → ${req.file.filename}`);
     res.json({ docKey: req.params.docKey, filename: req.file.filename });
   } catch (e) {
     res.status(500).json({ error: 'Failed to store file' });
@@ -1243,6 +1271,8 @@ router.get('/files/:empId/:docKey', authenticate, fileAccess(false), (req, res) 
     const dir = path.join(UPLOAD_ROOT, req.params.empId);
     const match = fs.existsSync(dir) && fs.readdirSync(dir).find(f => f.startsWith(req.params.docKey + '.'));
     if (!match) return res.status(404).json({ error: 'File not found.' });
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="${match}"`);
     res.sendFile(path.join(dir, match));
   } catch (e) {
     res.status(500).json({ error: 'Failed to read file' });
@@ -1263,7 +1293,7 @@ router.put('/me/preferences', authenticate, async (req, res) => {
   }
 });
 
-// Google Workspace sync (simulated, admin)
+// Document vault / simulated Google Workspace (legacy UI label: Google Sync)
 router.get('/gsync/:kind', authenticate, authorize(['admin']), async (req, res) => {
   try {
     const models = { drive: 'simulatedGDrive', sheets: 'simulatedGSheets', gmail: 'simulatedGmail' };
@@ -1273,6 +1303,81 @@ router.get('/gsync/:kind', authenticate, authorize(['admin']), async (req, res) 
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch sync data' });
+  }
+});
+
+// ---- Global search (people, tickets, assets) ----
+router.get('/search', authenticate, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ employees: [], tickets: [], assets: [] });
+    const actor = await loadActor(req);
+    const [employees, tickets, assets] = await Promise.all([
+      prisma.employee.findMany({
+        where: {
+          status: { not: 'inactive' },
+          OR: [
+            { name: { contains: q } },
+            { email: { contains: q } },
+            { department: { contains: q } },
+            { id: { contains: q } }
+          ]
+        },
+        take: 10,
+        select: { id: true, name: true, email: true, department: true, designation: true, role: true }
+      }),
+      prisma.helpdeskTicket.findMany({
+        where: {
+          OR: [
+            { subject: { contains: q } },
+            { description: { contains: q } }
+          ]
+        },
+        take: 8,
+        select: { id: true, subject: true, status: true, priority: true, employeeId: true }
+      }),
+      prisma.asset.findMany({
+        where: {
+          OR: [
+            { name: { contains: q } },
+            { serialNumber: { contains: q } },
+            { type: { contains: q } }
+          ]
+        },
+        take: 8,
+        include: { employee: { select: { name: true } } }
+      })
+    ]);
+    res.json({
+      employees: redactEmployees(employees, actor),
+      tickets,
+      assets
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// ---- Company settings (admin) ----
+router.get('/settings/company', authenticate, async (req, res) => {
+  try {
+    res.json(await getAllSettings());
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load settings' });
+  }
+});
+
+router.put('/settings/company', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const allowed = ['lateThreshold', 'companyName', 'workWeek'];
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) await setSetting(k, req.body[k]);
+    }
+    await audit(req.user, 'update', 'settings', 'company', JSON.stringify(req.body));
+    res.json(await getAllSettings());
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save settings' });
   }
 });
 

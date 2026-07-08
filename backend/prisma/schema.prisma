@@ -4,35 +4,37 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model Employee {
-  id           String      @id
-  email        String      @unique
-  password     String
-  name         String
-  role         String      @default("employee")
-  status       String      @default("active")
-  department   String?
-  designation  String?
-  avatar       String?
-  doj          String?
-  age          Int?
-  bloodGroup   String?
-  contact      String?
-  salaryBasic  Float       @default(0)
-  salaryAllow  Float       @default(0)
-  salaryDeduct Float       @default(0)
-  experience   String?     // Serialized JSON array
-  education    String?     // Serialized JSON array
-  documents    String?     // Serialized JSON
-  managerId    String?
-  preferences  String?     // Serialized JSON
-  permissions  String?     // Serialized JSON
+  id              String   @id
+  email           String   @unique
+  password        String
+  name            String
+  role            String   @default("employee")
+  status          String   @default("active")
+  department      String?
+  designation     String?
+  avatar          String?
+  doj             String?
+  age             Int?
+  bloodGroup      String?
+  contact         String?
+  salaryBasic     Float    @default(0)
+  salaryAllow     Float    @default(0)
+  salaryDeduct    Float    @default(0)
+  experience      String? // Serialized JSON array
+  education       String? // Serialized JSON array
+  documents       String? // Serialized JSON
+  managerId       String?
+  preferences     String? // Serialized JSON
+  permissions     String? // Serialized JSON
   onboardingState String   @default("approved") // draft | submitted | approved | returned
-  onboardingNote  String?  // admin note when returned for re-upload
-  
+  onboardingNote  String? // admin note when returned for re-upload
+
+  manager                  Employee?                  @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
+  reports                  Employee[]                 @relation("ReportsTo")
   leaves                   Leave[]
   attendance               Attendance[]
   attendanceRegularization AttendanceRegularization[]
@@ -43,8 +45,35 @@ model Employee {
   goals                    Goal[]
   tickets                  HelpdeskTicket[]
   replies                  TicketReply[]
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  leaveBalance             LeaveBalance?
+  sessions                 Session[]
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+
+  @@index([status])
+  @@index([managerId])
+  @@index([department])
+  @@index([role])
+}
+
+// Server-side session rows so logout / password reset can revoke JWTs.
+model Session {
+  id        String    @id @default(cuid())
+  jti       String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      Employee  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Company-wide key/value settings (e.g. late threshold).
+model AppSetting {
+  key   String @id
+  value String
 }
 
 model Leave {
@@ -58,11 +87,14 @@ model Leave {
   status         String   @default("Pending")
   requiredLevels Int      @default(1)
   approvedLevels Int      @default(0)
-  employee       Employee @relation(fields: [employeeId], references: [id])
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
+
+  @@index([employeeId, status])
+  @@index([status])
+  @@index([startDate, endDate])
 }
 
-// Configurable mandatory-document checklist for onboarding.
 model DocRequirement {
   key      String  @id
   label    String
@@ -71,20 +103,24 @@ model DocRequirement {
 }
 
 model LeaveBalance {
-  employeeId   String   @id
-  annual       Int      @default(0)
-  sick         Int      @default(0)
-  casual       Int      @default(0)
+  employeeId String   @id
+  annual     Int      @default(0)
+  sick       Int      @default(0)
+  casual     Int      @default(0)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
 model Attendance {
-  id           String   @id @default(cuid())
-  employeeId   String
-  date         String
-  checkIn      String?
-  checkOut     String?
-  status       String   @default("Present")
-  employee     Employee @relation(fields: [employeeId], references: [id])
+  id         String   @id @default(cuid())
+  employeeId String
+  date       String
+  checkIn    String?
+  checkOut   String?
+  status     String   @default("Present")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
 }
 
 model AttendanceRegularization {
@@ -95,20 +131,26 @@ model AttendanceRegularization {
   actualCheckOut String
   reason         String
   status         String   @default("Pending")
-  employee       Employee @relation(fields: [employeeId], references: [id])
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, status])
 }
 
 model Asset {
-  id             String   @id @default(cuid())
-  employeeId     String?
-  name           String
-  type           String
-  serialNumber   String
-  condition      String
-  status         String
-  assignedBy     String?
-  assignedDate   String?
-  employee       Employee? @relation(fields: [employeeId], references: [id])
+  id           String    @id @default(cuid())
+  employeeId   String?
+  name         String
+  type         String
+  serialNumber String
+  condition    String
+  status       String
+  assignedBy   String?
+  assignedDate String?
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([serialNumber])
 }
 
 model AuditLog {
@@ -120,6 +162,10 @@ model AuditLog {
   entityId  String?
   detail    String?
   at        DateTime @default(now())
+
+  @@index([entity, at])
+  @@index([actorId])
+  @@index([at])
 }
 
 model Notification {
@@ -130,6 +176,9 @@ model Notification {
   kind   String   @default("general")
   read   Boolean  @default(false)
   at     DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, at])
 }
 
 model Holiday {
@@ -160,89 +209,106 @@ model Payroll {
   netPay           Float
   status           String   @default("Paid")
   paymentDate      String
-  employee         Employee @relation(fields: [employeeId], references: [id])
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, month])
+  @@index([month])
 }
 
 model TaxDeclaration {
-  id               String   @id @default(cuid())
-  employeeId       String
-  section80C       Float    @default(0)
-  section80D       Float    @default(0)
-  hraRent          Float    @default(0)
-  otherDeductions  Float    @default(0)
-  employee         Employee @relation(fields: [employeeId], references: [id])
+  id              String   @id @default(cuid())
+  employeeId      String
+  section80C      Float    @default(0)
+  section80D      Float    @default(0)
+  hraRent         Float    @default(0)
+  otherDeductions Float    @default(0)
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }
 
 model SalaryAdvance {
-  id               String   @id @default(cuid())
-  employeeId       String
-  amount           Float
-  reason           String
-  repaymentMonths  Int
-  status           String   @default("Pending")
-  requestDate      String
-  employee         Employee @relation(fields: [employeeId], references: [id])
+  id              String   @id @default(cuid())
+  employeeId      String
+  amount          Float
+  reason          String
+  repaymentMonths Int
+  status          String   @default("Pending")
+  requestDate     String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, status])
 }
 
 model Goal {
-  id               String   @id @default(cuid())
-  employeeId       String
-  title            String
-  progress         Int      @default(0)
-  targetDate       String
-  employee         Employee @relation(fields: [employeeId], references: [id])
+  id         String   @id @default(cuid())
+  employeeId String
+  title      String
+  progress   Int      @default(0)
+  targetDate String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }
 
 model HelpdeskTicket {
-  id               String   @id @default(cuid())
-  employeeId       String
-  subject          String
-  category         String
-  description      String
-  priority         String
-  status           String   @default("Open")
-  createdDate      String
-  employee         Employee @relation(fields: [employeeId], references: [id])
-  replies          TicketReply[]
+  id          String        @id @default(cuid())
+  employeeId  String
+  subject     String
+  category    String
+  description String
+  priority    String
+  status      String        @default("Open")
+  createdDate String
+  employee    Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  replies     TicketReply[]
+
+  @@index([employeeId, status])
+  @@index([status])
 }
 
 model TicketReply {
-  id               String   @id @default(cuid())
-  ticketId         String
-  senderId         String
-  text             String
-  date             String
-  ticket           HelpdeskTicket @relation(fields: [ticketId], references: [id])
-  sender           Employee       @relation(fields: [senderId], references: [id])
+  id       String         @id @default(cuid())
+  ticketId String
+  senderId String
+  text     String
+  date     String
+  ticket   HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender   Employee       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
 }
 
 model Shoutout {
-  id               String   @id @default(cuid())
-  fromId           String
-  toId             String
-  message          String
-  timestamp        String
+  id        String @id @default(cuid())
+  fromId    String
+  toId      String
+  message   String
+  timestamp String
 }
 
+// Document vault (UI-labeled "Google Sync" for legacy parity — simulated storage).
 model SimulatedGDrive {
-  id               String   @id @default(cuid())
-  name             String
-  type             String
-  parent           String
-  content          String?
+  id      String  @id @default(cuid())
+  name    String
+  type    String
+  parent  String
+  content String?
+
+  @@index([parent])
 }
 
 model SimulatedGSheets {
-  id               String   @id @default(cuid())
-  sheetName        String
-  data             String   // Serialized JSON
+  id        String @id @default(cuid())
+  sheetName String
+  data      String // Serialized JSON
 }
 
 model SimulatedGmail {
-  id               String   @id @default(cuid())
-  sender           String
-  recipient        String
-  subject          String
-  body             String
-  timestamp        String
+  id        String @id @default(cuid())
+  sender    String
+  recipient String
+  subject   String
+  body      String
+  timestamp String
 }

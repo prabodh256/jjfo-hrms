@@ -14,7 +14,7 @@ function GoogleSync() {
 
   return (
     <div className="view-panel active-view">
-      <div className="view-header"><div><h2>Google Workspace Sync</h2><p>Simulated Drive, Sheets and Gmail integration logs.</p></div></div>
+      <div className="view-header"><div><h2>Document Vault</h2><p>Simulated Drive / Sheets / Gmail vault (not a live Google connection yet).</p></div></div>
       <div className="tab-navigation">
         {TABS.map(k => (
           <button key={k} className={`tab-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)} style={{ textTransform: 'capitalize' }}>{k}</button>

@@ -1,18 +1,22 @@
 {
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "jjfo-hrms-backend",
+  "version": "1.1.0",
+  "description": "JJFO HRMS API",
+  "main": "server.js",
   "scripts": {
     "dev": "node --env-file=.env --watch server.js",
     "start": "node --env-file=.env server.js",
     "seed": "node --env-file=.env seed.js",
+    "db:push": "npx prisma db push",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
     "test:smoke": "node --env-file=.env test/smoke.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:smoke"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["hrms", "jjfo"],
+  "author": "JJFO",
+  "license": "UNLICENSED",
+  "private": true,
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "^6.4.1",
@@ -24,11 +28,9 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "sqlite3": "^6.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14",
     "prisma": "^6.4.1"
   }
 }

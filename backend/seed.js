@@ -27,7 +27,18 @@ async function main() {
   await prisma.notification.deleteMany();
   await prisma.holiday.deleteMany();
   await prisma.payrollCycle.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.appSetting.deleteMany();
   await prisma.employee.deleteMany();
+
+  // Company defaults
+  await prisma.appSetting.createMany({
+    data: [
+      { key: 'lateThreshold', value: '09:15' },
+      { key: 'companyName', value: 'JJFO' },
+      { key: 'workWeek', value: 'Mon-Fri' }
+    ]
+  });
 
   // Company holiday calendar (excluded from leave durations).
   await prisma.holiday.createMany({

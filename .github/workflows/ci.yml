@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma db push
+        env:
+          DATABASE_URL: file:./dev.db
+      - run: npm run seed
+        env:
+          DATABASE_URL: file:./dev.db
+          JWT_SECRET: ci-test-secret-key-at-least-32-chars
+      - name: Start API
+        run: |
+          node --env-file=.env.example server.js &
+          echo "PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/health && break
+            sleep 1
+          done
+        env:
+          JWT_SECRET: ci-test-secret-key-at-least-32-chars
+          PORT: 4000
+          CLIENT_ORIGIN: http://localhost:5173
+          DATABASE_URL: file:./dev.db
+          NODE_ENV: development
+      - run: npm run test:smoke
+        env:
+          SMOKE_BASE: http://localhost:4000
+          JWT_SECRET: ci-test-secret-key-at-least-32-chars
+          DATABASE_URL: file:./dev.db
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
