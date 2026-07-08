@@ -87,6 +87,9 @@ model Leave {
   status         String   @default("Pending")
   requiredLevels Int      @default(1)
   approvedLevels Int      @default(0)
+  comment        String?
+  decisionNote   String?
+  lateApplied    Boolean  @default(false)
   employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
 
@@ -328,4 +331,36 @@ model PermissionRequest {
   @@index([status])
   @@index([targetId])
   @@index([requestedBy])
+}
+
+model HrDocument {
+  id         String    @id @default(cuid())
+  employeeId String
+  type       String
+  title      String
+  status     String    @default("Issued")
+  body       String?
+  issuedBy   String
+  signedAt   DateTime?
+  signedBy   String?
+  createdAt  DateTime  @default(now())
+
+  @@index([employeeId])
+  @@index([type])
+}
+
+model Resignation {
+  id             String    @id @default(cuid())
+  employeeId     String
+  reason         String
+  lastWorkingDay String
+  status         String    @default("PendingManager")
+  managerNote    String?
+  hrNote         String?
+  managerId      String?
+  createdAt      DateTime  @default(now())
+  decidedAt      DateTime?
+
+  @@index([employeeId, status])
+  @@index([status])
 }

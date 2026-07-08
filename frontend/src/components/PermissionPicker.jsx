@@ -30,7 +30,7 @@ function PermissionPicker({ value, grantable, onChange }) {
       <div>
         <strong>Module access (View / Edit)</strong>
         <p className="text-muted" style={{ fontSize: '0.75rem', margin: '2px 0 8px' }}>
-          Dashboard, Leave, Helpdesk &amp; Settings are always available. <strong>Payroll is off by default</strong> — grant explicitly.
+          Dashboard, Leave, Helpdesk, Settings &amp; own Payroll are always available. Extra modules (e.g. company-wide payroll tools) need grant.
         </p>
         <div className="perm-level-list">
           {grantableModules.length === 0 ? (

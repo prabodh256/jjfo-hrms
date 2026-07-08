@@ -61,9 +61,10 @@ function Settings() {
     try {
       await savePreferences(prefs);
       applyPreferences(prefs);
-      setMsg('Preferences saved.');
+      setMsg('✓ Preferences saved successfully.');
+      setTimeout(() => setMsg(''), 4000);
     } catch (err) {
-      setMsg(err.message);
+      setMsg(err.message || 'Save failed');
     }
   };
 
@@ -84,7 +85,7 @@ function Settings() {
         <div><h2>Settings</h2><p>Personalize your interface. Changes preview live.</p></div>
       </div>
       <div className="glass p-6" style={{ maxWidth: '520px' }}>
-        {msg && <p>{msg}</p>}
+        {msg && <div className={`settings-flash ${msg.startsWith('✓') ? 'ok' : 'err'}`} role="status">{msg}</div>}
         <form onSubmit={save} style={{ display: 'grid', gap: '1.2rem' }}>
           <div className="form-group">
             <label>Theme</label>

@@ -213,9 +213,9 @@ async function main() {
   const search = await api('GET', '/api/search?q=Rajesh', { cookie: admin.cookie });
   check('T-SEARCH global search finds employee', search.status === 200 && search.json?.employees?.some(e => e.name?.includes('Rajesh')));
 
-  // Payroll locked by default for non-admin without module
-  const payDeny = await api('GET', '/api/payroll', { cookie: priya.cookie });
-  check('T-PAY  payroll denied without module → 403', payDeny.status === 403, `status=${payDeny.status}`);
+  // Everyone can view own payroll
+  const paySelf = await api('GET', '/api/payroll', { cookie: priya.cookie });
+  check('T-PAY  employee can view own payroll', paySelf.status === 200, `status=${paySelf.status}`);
   const payAdmin = await api('GET', '/api/payroll', { cookie: admin.cookie });
   check('T-PAY  admin payroll allowed', payAdmin.status === 200);
 
@@ -286,7 +286,7 @@ async function main() {
   const hlv = await api('POST', '/api/leaves', { cookie: att.cookie, body: { leaveType: 'Casual Leave', startDate: '2099-05-04', endDate: '2099-05-06', reason: 'holiday span' } });
   check('T-HOL  holiday excluded (3-day span → 2)', hlv.status === 200 && hlv.json?.durationDays === 2, `days=${hlv.json?.durationDays}`);
   const cx = await api('PUT', `/api/leaves/${hlv.json?.id}/cancel`, { cookie: att.cookie });
-  check('T-LEAVE owner cancels pending leave', cx.status === 200 && cx.json?.status === 'Cancelled', `status=${cx.status}`);
+  check('T-LEAVE owner cancels pending leave', cx.status === 200 && (cx.json?.status === 'Cancelled' || cx.json?.status === 'Withdrawn'), `status=${cx.status} body=${cx.json?.status}`);
   await api('DELETE', `/api/holidays/${hol.json?.id}`, { cookie: admin.cookie });
 
   // Payroll finalization lock (month the main test never processes)

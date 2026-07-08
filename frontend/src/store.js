@@ -143,14 +143,14 @@ const useStore = create((set, get) => ({
     await get().fetchLeaves();
     await get().fetchLeaveBalances();
   },
-  approveLeave: async (id) => {
-    await safe(() => apiMutate(`/api/leaves/${id}/approve`, 'PUT'));
+  approveLeave: async (id, note) => {
+    await safe(() => apiMutate(`/api/leaves/${id}/approve`, 'PUT', note ? { note } : {}));
     toastSuccess('Leave approved');
     await get().fetchLeaves();
     await get().fetchLeaveBalances();
   },
-  rejectLeave: async (id) => {
-    await safe(() => apiMutate(`/api/leaves/${id}/reject`, 'PUT'));
+  rejectLeave: async (id, note) => {
+    await safe(() => apiMutate(`/api/leaves/${id}/reject`, 'PUT', note ? { note } : {}));
     toastSuccess('Leave rejected');
     await get().fetchLeaves();
     await get().fetchLeaveBalances();
@@ -296,8 +296,8 @@ const useStore = create((set, get) => ({
     await apiMutate(`/api/holidays/${id}`, 'DELETE');
     await get().fetchHolidays();
   },
-  cancelLeave: async (id) => {
-    await apiMutate(`/api/leaves/${id}/cancel`, 'PUT');
+  cancelLeave: async (id, note) => {
+    await apiMutate(`/api/leaves/${id}/cancel`, 'PUT', note ? { note } : undefined);
     await get().fetchLeaves();
     await get().fetchLeaveBalances();
   },
@@ -391,7 +391,41 @@ const useStore = create((set, get) => ({
       return null;
     }
   },
-  clearSearch: () => set({ searchResults: null })
+  clearSearch: () => set({ searchResults: null }),
+
+  // HR docs + resignation workflows
+  hrDocs: [],
+  resignations: [],
+  orgMe: null,
+  fetchHrDocs: async (all) => {
+    try { set({ hrDocs: await apiGet(`/api/hr-documents${all ? '?all=1' : ''}`) }); }
+    catch (e) { console.error(e); }
+  },
+  issueHrDoc: async (body) => {
+    const d = await safe(() => apiMutate('/api/hr-documents', 'POST', body));
+    await get().fetchHrDocs(true);
+    return d;
+  },
+  signHrDoc: async (id) => {
+    await safe(() => apiMutate(`/api/hr-documents/${id}/sign`, 'POST'));
+    await get().fetchHrDocs(true);
+  },
+  fetchResignations: async () => {
+    try { set({ resignations: await apiGet('/api/resignations') }); }
+    catch (e) { console.error(e); }
+  },
+  submitResignation: async (body) => {
+    await safe(() => apiMutate('/api/resignations', 'POST', body));
+    await get().fetchResignations();
+  },
+  decideResignation: async (id, action, note) => {
+    await safe(() => apiMutate(`/api/resignations/${id}/decide`, 'PUT', { action, note }));
+    await get().fetchResignations();
+  },
+  fetchOrgMe: async () => {
+    try { set({ orgMe: await apiGet('/api/org/me') }); }
+    catch (e) { console.error(e); }
+  }
 }));
 
 export default useStore;

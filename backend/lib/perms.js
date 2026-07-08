@@ -7,8 +7,8 @@ const ALL_MODULES = [
 const ALL_CAPS = [
   'createUsers', 'approveLeaves', 'accessFinancials', 'manageHierarchy', 'moderateHelpdesk'
 ];
-// Self-service only — payroll is NEVER base (must be explicitly granted).
-const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings'];
+// Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
+const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings', 'payroll'];
 const LEVEL_RANK = { view: 1, edit: 2 };
 
 const parseJson = (s) => {

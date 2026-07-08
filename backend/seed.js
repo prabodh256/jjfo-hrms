@@ -30,6 +30,8 @@ async function main() {
   await prisma.session.deleteMany();
   await prisma.appSetting.deleteMany();
   try { await prisma.permissionRequest.deleteMany(); } catch { /* model may be new */ }
+  try { await prisma.hrDocument.deleteMany(); } catch { /* */ }
+  try { await prisma.resignation.deleteMany(); } catch { /* */ }
   await prisma.employee.deleteMany();
 
   // Company defaults

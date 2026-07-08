@@ -3,7 +3,7 @@ import {
   BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, Link
 } from 'react-router-dom';
 import useStore from './store';
-import { applyPreferences, parsePrefs } from './theme';
+import { applyPreferences, parsePrefs, DEFAULT_PREFS } from './theme';
 import { hasModule, hasCap } from './permissions';
 import { onToast } from './toast';
 import ErrorBoundary from './ErrorBoundary';
@@ -19,6 +19,7 @@ import GoogleSync from './components/GoogleSync';
 import Settings from './components/Settings';
 import AuditLog from './components/AuditLog';
 import Reports from './components/Reports';
+import Workflows from './components/Workflows';
 
 const NAV = [
   { to: '/', key: 'dashboard', icon: 'dashboard', label: 'Dashboard', end: true },
@@ -28,6 +29,7 @@ const NAV = [
   { to: '/payroll', key: 'payroll', icon: 'payments', label: 'Payroll & Tax' },
   { to: '/assets', key: 'assets', icon: 'devices', label: 'Asset Inventory' },
   { to: '/helpdesk', key: 'helpdesk', icon: 'support_agent', label: 'HR Helpdesk' },
+  { to: '/workflows', key: 'onboarding', icon: 'assignment', label: 'HR Workflows' },
   { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Permissions', capAlt: 'createUsers' },
   { to: '/gsync', key: 'gsync', icon: 'cloud_sync', label: 'Document Vault' },
   { to: '/reports', key: 'reports', icon: 'insights', label: 'Reports' },
@@ -93,7 +95,7 @@ function NotificationBell() {
         {unread > 0 && <span className="bell-count">{unread}</span>}
       </button>
       {open && (
-        <div className="bell-panel glass" role="dialog" aria-label="Notification list">
+        <div className="bell-panel glass bell-panel-fixed" role="dialog" aria-label="Notification list">
           <div className="bell-head">
             <strong>Notifications</strong>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -126,6 +128,31 @@ function NotificationBell() {
         </div>
       )}
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const { user, savePreferences, refreshMe } = useStore();
+  const prefs = { ...DEFAULT_PREFS, ...parsePrefs(user?.preferences) };
+  const isDark = prefs.theme !== 'light';
+  const toggle = async () => {
+    const next = { ...prefs, theme: isDark ? 'light' : 'dark' };
+    applyPreferences(next);
+    try {
+      await savePreferences(next);
+      if (refreshMe) await refreshMe();
+    } catch { /* local theme still applied */ }
+  };
+  return (
+    <button
+      type="button"
+      className="theme-toggle-btn"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Light mode' : 'Dark mode'}
+      onClick={toggle}
+    >
+      <i className="material-icons-round">{isDark ? 'light_mode' : 'dark_mode'}</i>
+    </button>
   );
 }
 
@@ -298,6 +325,7 @@ function MainApp() {
         <header className="topbar glass">
           <GlobalSearch />
           <div className="topbar-actions">
+            <ThemeToggle />
             <NotificationBell />
             <div className="user-profile-menu">
               <img id="current-user-avatar" src={avatar} alt="" width={36} height={36} />
@@ -335,6 +363,7 @@ function MainApp() {
               <Route path="/payroll" element={<Guard k="payroll"><Payroll /></Guard>} />
               <Route path="/assets" element={<Guard k="assets"><Assets /></Guard>} />
               <Route path="/helpdesk" element={<Guard k="helpdesk"><Helpdesk /></Guard>} />
+              <Route path="/workflows" element={<Workflows />} />
               <Route path="/permissions" element={<Guard k="permissions"><Permissions /></Guard>} />
               <Route path="/gsync" element={<Guard k="gsync"><GoogleSync /></Guard>} />
               <Route path="/reports" element={<Guard k="reports"><Reports /></Guard>} />

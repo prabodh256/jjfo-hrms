@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
 import { hasCap } from '../permissions';
+import MiniBars from './MiniBars';
 
 const TYPES = ['Annual Leave', 'Sick Leave', 'Casual Leave'];
-const EMPTY = { employeeId: '', leaveType: 'Annual Leave', startDate: '', endDate: '', reason: '', status: 'Pending' };
+const EMPTY = { employeeId: '', leaveType: 'Annual Leave', startDate: '', endDate: '', reason: '', comment: '', status: 'Pending' };
 
 function days(a, b) { if (!a || !b) return 0; const d = (new Date(b) - new Date(a)) / 86400000; return d >= 0 ? d + 1 : 0; }
 
@@ -112,7 +113,14 @@ function Leaves() {
     setBalEdit({ ...balEdit, [b.employeeId]: undefined });
   };
 
-  const act = async (fn, id) => { setMsg(''); try { await fn(id); } catch (e) { setMsg(e.message); } };
+  const act = async (fn, id, needNote) => {
+    setMsg('');
+    try {
+      let note;
+      if (needNote) note = window.prompt('Comment (optional)') || '';
+      await fn(id, note);
+    } catch (e) { setMsg(e.message); }
+  };
 
   return (
     <div className="view-panel active-view">
@@ -126,7 +134,39 @@ function Leaves() {
         <button type="button" className={`tab-btn ${tab === 'attendance' ? 'active' : ''}`} onClick={() => setTab('attendance')}>Attendance {pendingRegs.length && canApprove ? `(${pendingRegs.length})` : ''}</button>
         {canApprove && <button type="button" className={`tab-btn ${tab === 'approvals' ? 'active' : ''}`} onClick={() => setTab('approvals')}>Approvals {pendingForMe.length ? `(${pendingForMe.length})` : ''}</button>}
         <button type="button" className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>Leave trail</button>
+        <button type="button" className={`tab-btn ${tab === 'charts' ? 'active' : ''}`} onClick={() => setTab('charts')}>Charts</button>
       </div>
+
+      {tab === 'charts' && (
+        <div className="grid-2" style={{ gap: 16, marginTop: 8 }}>
+          <MiniBars
+            title="My leave balance (available)"
+            items={myBal ? [
+              { label: 'Annual', value: myBal.annual.available, color: '#4f46e5' },
+              { label: 'Sick', value: myBal.sick.available, color: '#14b8a6' },
+              { label: 'Casual', value: myBal.casual.available, color: '#f43f5e' }
+            ] : []}
+          />
+          <MiniBars
+            title="Leave status (visible trail)"
+            items={[
+              { label: 'Pending', value: leaves.filter(l => l.status === 'Pending').length, color: '#fbbf24' },
+              { label: 'Approved', value: leaves.filter(l => l.status === 'Approved').length, color: '#10b981' },
+              { label: 'Rejected', value: leaves.filter(l => l.status === 'Rejected').length, color: '#ef4444' },
+              { label: 'Late flag', value: leaves.filter(l => l.lateApplied).length, color: '#dc2626' }
+            ]}
+          />
+          <MiniBars
+            title="Attendance status (recent)"
+            color="#6366f1"
+            items={[
+              { label: 'On Time', value: attendance.filter(a => a.status === 'On Time').length },
+              { label: 'Late', value: attendance.filter(a => a.status === 'Late').length },
+              { label: 'Regularized', value: attendance.filter(a => a.status === 'Regularized').length }
+            ]}
+          />
+        </div>
+      )}
 
       {tab === 'balances' && (
         <div>
@@ -241,6 +281,11 @@ function Leaves() {
             </div>
             <div className="form-group"><label>Reason</label>
               <textarea className="form-control" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} required /></div>
+            <div className="form-group"><label>Comment (optional)</label>
+              <textarea className="form-control" placeholder="Context for approvers…" value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} /></div>
+            <p className="text-muted" style={{ fontSize: '0.75rem' }}>
+              Applying for past dates is allowed but permanently flagged <strong style={{ color: '#f87171' }}>Late apply</strong>.
+            </p>
             {isAdmin && (
               <div className="form-group"><label>Status</label>
                 <select className="form-control" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
@@ -337,8 +382,8 @@ function Leaves() {
                   <td><Progress l={l} /></td>
                   <td>
                     <div className="action-btn-group">
-                      <button className="btn btn-sm btn-primary" onClick={() => act(approveLeave, l.id)}>Approve</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => act(rejectLeave, l.id)}>Reject</button>
+                      <button type="button" className="btn btn-sm btn-primary" onClick={() => act(approveLeave, l.id, true)}>Approve</button>
+                      <button type="button" className="btn btn-sm btn-danger" onClick={() => act(rejectLeave, l.id, true)}>Reject</button>
                     </div>
                   </td>
                 </tr>
@@ -359,14 +404,30 @@ function Leaves() {
             <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th><th>Approval</th><th></th></tr></thead>
             <tbody>
               {visibleLeaves.length === 0 ? <tr><td colSpan="8">No leave records.</td></tr> : visibleLeaves.map(l => (
-                <tr key={l.id} className={l.employeeId !== user?.id ? 'trail-team-row' : ''}>
-                  <td><strong>{l.employee?.name || l.employeeId}</strong></td>
+                <tr key={l.id} className={`${l.employeeId !== user?.id ? 'trail-team-row' : ''} ${l.lateApplied ? 'leave-late-row' : ''}`}>
+                  <td>
+                    <strong>{l.employee?.name || l.employeeId}</strong>
+                    {l.lateApplied && <div><span className="badge badge-danger">Late apply</span></div>}
+                    {l.comment && <div className="text-muted" style={{ fontSize: '0.75rem' }}>Note: {l.comment}</div>}
+                    {l.decisionNote && <div className="text-muted" style={{ fontSize: '0.75rem' }}>Decision: {l.decisionNote}</div>}
+                  </td>
                   <td>{l.leaveType}</td><td>{l.startDate} → {l.endDate}</td><td>{l.durationDays}</td><td>{l.reason}</td>
                   <td><StatusBadge l={l} /></td>
                   <td><Progress l={l} /></td>
-                  <td>{((l.employeeId === user?.id && l.status === 'Pending') || (isAdmin && ['Pending', 'Approved'].includes(l.status))) && (
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={async () => { try { await cancelLeave(l.id); await fetchLeaveBalances(); } catch (e) { setMsg(e.message); } }}>Cancel</button>
-                  )}</td>
+                  <td className="action-btn-group">
+                    {l.employeeId === user?.id && l.status === 'Pending' && (
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={async () => {
+                        try { await cancelLeave(l.id); await fetchLeaveBalances(); setMsg('Withdrawn — balance released.'); }
+                        catch (e) { setMsg(e.message); }
+                      }}>Withdraw</button>
+                    )}
+                    {isAdmin && ['Pending', 'Approved'].includes(l.status) && l.employeeId !== user?.id && (
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={async () => {
+                        const note = window.prompt('Cancel note (optional)') || '';
+                        try { await cancelLeave(l.id, note); await fetchLeaveBalances(); } catch (e) { setMsg(e.message); }
+                      }}>Cancel</button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

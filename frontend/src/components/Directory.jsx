@@ -5,13 +5,13 @@ import Modal from './Modal';
 import EmployeeForm from './EmployeeForm';
 
 function Directory() {
-  const { employees, fetchEmployees, user, addEmployee, updateEmployee, updateSelf, deactivateEmployee, setManager, grantable, fetchGrantable, resetPassword } = useStore();
+  const { employees, fetchEmployees, user, addEmployee, updateEmployee, updateSelf, deactivateEmployee, setManager, grantable, fetchGrantable, resetPassword, orgMe, fetchOrgMe } = useStore();
   const [tab, setTab] = useState('grid');
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [modal, setModal] = useState(null); // { mode, employee }
 
-  useEffect(() => { fetchEmployees(showInactive); fetchGrantable(); }, [fetchEmployees, fetchGrantable, showInactive]);
+  useEffect(() => { fetchEmployees(showInactive); fetchGrantable(); fetchOrgMe(); }, [fetchEmployees, fetchGrantable, fetchOrgMe, showInactive]);
 
   const isAdmin = user?.role === 'admin';
   const canCreate = hasCap(user, 'createUsers');
@@ -70,8 +70,9 @@ function Directory() {
 
       <div className="view-toolbar">
         <div className="tab-navigation" style={{ border: 'none', margin: 0, padding: 0 }}>
-          <button className={`tab-btn ${tab === 'grid' ? 'active' : ''}`} onClick={() => setTab('grid')}>Directory Grid</button>
-          <button className={`tab-btn ${tab === 'org' ? 'active' : ''}`} onClick={() => setTab('org')}>Org Chart</button>
+          <button type="button" className={`tab-btn ${tab === 'grid' ? 'active' : ''}`} onClick={() => setTab('grid')}>Directory Grid</button>
+          <button type="button" className={`tab-btn ${tab === 'org' ? 'active' : ''}`} onClick={() => setTab('org')}>Full Org</button>
+          <button type="button" className={`tab-btn ${tab === 'myorg' ? 'active' : ''}`} onClick={() => setTab('myorg')}>My hierarchy</button>
         </div>
         <div className="action-btn-group">
           {isAdmin && (
@@ -134,6 +135,41 @@ function Directory() {
         )}
         {tab === 'org' && (
           <div className="org-tree-container"><ul className="org-tree">{roots.map(r => buildTree(r.id))}</ul></div>
+        )}
+        {tab === 'myorg' && (
+          <div className="my-org glass p-6">
+            <h3>My escalation chain (you → CEO)</h3>
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
+              Use this path for escalations. Bottom is the top of the org.
+            </p>
+            {!orgMe ? <p>Loading…</p> : (
+              <>
+                <ol className="chain-up">
+                  <li className="chain-me">
+                    <strong>{orgMe.me?.name}</strong> <span className="text-muted">(you)</span>
+                    <div className="text-muted">{orgMe.me?.designation} · {orgMe.me?.department}</div>
+                  </li>
+                  {(orgMe.chainUp || []).map((m, i) => (
+                    <li key={m.id}>
+                      <strong>{m.name}</strong>
+                      {i === (orgMe.chainUp.length - 1) && <em className="perm-badge"> top / CEO</em>}
+                      <div className="text-muted">{m.designation} · {m.department} · {m.email}</div>
+                    </li>
+                  ))}
+                </ol>
+                <h3 style={{ marginTop: 20 }}>Direct reports</h3>
+                {(orgMe.subordinates || []).length === 0 ? (
+                  <p className="text-muted">No direct subordinates.</p>
+                ) : (
+                  <ul className="sub-list">
+                    {orgMe.subordinates.map((s) => (
+                      <li key={s.id}><strong>{s.name}</strong> — {s.designation} ({s.department})</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 

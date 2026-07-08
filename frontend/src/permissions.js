@@ -23,8 +23,8 @@ export const CAPS = [
   { key: 'moderateHelpdesk', label: 'Moderate helpdesk' }
 ];
 
-// Payroll is never base — admin must grant it.
-export const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings'];
+// Everyone can open Payroll for own payslips; company-wide processing remains admin.
+export const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings', 'payroll'];
 
 export function parsePerms(raw) {
   try { return typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {}); }

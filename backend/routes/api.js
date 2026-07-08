@@ -511,13 +511,21 @@ router.post('/leaves', authenticate, async (req, res) => {
     if (requiredLevels === 0) { status = 'Approved'; }                       // top of org self-approves
     if (isAdmin && req.body.status === 'Approved') { approvedLevels = requiredLevels; status = 'Approved'; }
 
+    // Historical leave (end date before today) is always flagged late-applied (red forever).
+    const todayStr = new Date().toISOString().split('T')[0];
+    const lateApplied = !!(endDate && endDate < todayStr);
+    const comment = req.body.comment ? String(req.body.comment).slice(0, 500) : null;
     const leave = await prisma.leave.create({
-      data: { employeeId, leaveType, startDate, endDate, reason, durationDays, status, requiredLevels, approvedLevels }
+      data: {
+        employeeId, leaveType, startDate, endDate, reason, durationDays,
+        status, requiredLevels, approvedLevels, comment, lateApplied
+      }
     });
-    await audit(req.user, 'create', 'leave', leave.id, `${leaveType} ${startDate}→${endDate} (${durationDays}d) for ${employeeId}`);
+    await audit(req.user, 'create', 'leave', leave.id, `${leaveType} ${startDate}→${endDate} (${durationDays}d)${lateApplied ? ' LATE' : ''} for ${employeeId}`);
     if (leave.status === 'Pending') {
       const approver = await approverAtLevel(employeeId, 1);
-      await notify(approver, 'Leave awaiting your approval', `${leaveType} ${startDate} → ${endDate} (${durationDays} day(s)) needs your review.`, 'leave');
+      await notify(approver, lateApplied ? 'Late leave application' : 'Leave awaiting your approval',
+        `${leaveType} ${startDate} → ${endDate} (${durationDays}d)${lateApplied ? ' — applied after leave dates' : ''}${comment ? '. Note: ' + comment : ''}`, 'leave');
     }
     res.json(leave);
   } catch (error) {
@@ -525,26 +533,33 @@ router.post('/leaves', authenticate, async (req, res) => {
   }
 });
 
-// Cancel a leave: the owner while it is Pending; an admin anytime.
+// Cancel / withdraw: owner while Pending; admin anytime (Pending/Approved).
 router.put('/leaves/:id/cancel', authenticate, async (req, res) => {
   try {
     const leave = await prisma.leave.findUnique({ where: { id: req.params.id } });
     if (!leave) return res.status(404).json({ error: 'Leave not found' });
     const isAdmin = req.user.role === 'admin';
-    if (!isAdmin && !(leave.employeeId === req.user.id && leave.status === 'Pending')) {
-      return res.status(403).json({ error: 'You can only cancel your own pending leaves.' });
+    const isOwnerPending = leave.employeeId === req.user.id && leave.status === 'Pending';
+    if (!isAdmin && !isOwnerPending) {
+      return res.status(403).json({ error: 'You can only withdraw your own pending leaves.' });
     }
-    if (leave.status === 'Cancelled') return res.status(400).json({ error: 'Already cancelled.' });
-    const updated = await prisma.leave.update({ where: { id: leave.id }, data: { status: 'Cancelled' } });
-    await audit(req.user, 'cancel', 'leave', leave.id, `Cancelled (${leave.leaveType}, ${leave.durationDays}d)`);
-    if (isAdmin && leave.employeeId !== req.user.id) {
-      await notify(leave.employeeId, 'Leave cancelled by HR', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) was cancelled.`, 'leave');
+    if (leave.status === 'Cancelled' || leave.status === 'Withdrawn') return res.status(400).json({ error: 'Already withdrawn/cancelled.' });
+    const status = leave.employeeId === req.user.id && !isAdmin ? 'Withdrawn' : 'Cancelled';
+    const note = req.body.note ? String(req.body.note).slice(0, 500) : null;
+    const updated = await prisma.leave.update({
+      where: { id: leave.id },
+      data: { status, decisionNote: note || leave.decisionNote }
+    });
+    await audit(req.user, status === 'Withdrawn' ? 'withdraw' : 'cancel', 'leave', leave.id, `${status} (${leave.leaveType})`);
+    if (leave.employeeId !== req.user.id) {
+      await notify(leave.employeeId, 'Leave cancelled by HR', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) was cancelled.${note ? ' ' + note : ''}`, 'leave');
     }
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to cancel leave' });
   }
 });
+
 
 // Step-wise approval up the manager chain (each approver needs the approveLeaves cap).
 router.put('/leaves/:id/approve', authenticate, async (req, res) => {
@@ -561,10 +576,11 @@ router.put('/leaves/:id/approve', authenticate, async (req, res) => {
     }
     const approvedLevels = isAdmin ? leave.requiredLevels : leave.approvedLevels + 1;
     const status = approvedLevels >= leave.requiredLevels ? 'Approved' : 'Pending';
-    const updated = await prisma.leave.update({ where: { id: leave.id }, data: { approvedLevels, status } });
+    const decisionNote = req.body.note ? String(req.body.note).slice(0, 500) : leave.decisionNote;
+    const updated = await prisma.leave.update({ where: { id: leave.id }, data: { approvedLevels, status, decisionNote } });
     await audit(actor, 'approve', 'leave', leave.id, `Level ${approvedLevels}/${leave.requiredLevels} → ${status}`);
     if (status === 'Approved') {
-      await notify(leave.employeeId, 'Leave approved', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) is fully approved.`, 'leave');
+      await notify(leave.employeeId, 'Leave approved', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) is fully approved.${decisionNote ? ' Note: ' + decisionNote : ''}`, 'leave');
     } else {
       const nxt = await approverAtLevel(leave.employeeId, approvedLevels + 1);
       await notify(nxt, 'Leave awaiting your approval', `A ${leave.leaveType} request (${leave.durationDays} day(s)) needs your level-${approvedLevels + 1} sign-off.`, 'leave');
@@ -587,9 +603,13 @@ router.put('/leaves/:id/reject', authenticate, async (req, res) => {
     if (!isAdmin && !(actor.id === nextApprover && perms.caps.approveLeaves)) {
       return res.status(403).json({ error: 'You are not the required approver for this step.' });
     }
-    const updated = await prisma.leave.update({ where: { id: leave.id }, data: { status: 'Rejected' } });
-    await audit(actor, 'reject', 'leave', leave.id, `${leave.leaveType} ${leave.durationDays}d rejected`);
-    await notify(leave.employeeId, 'Leave rejected', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) was rejected.`, 'leave');
+    const decisionNote = req.body.note ? String(req.body.note).slice(0, 500) : null;
+    const updated = await prisma.leave.update({
+      where: { id: leave.id },
+      data: { status: 'Rejected', decisionNote }
+    });
+    await audit(actor, 'reject', 'leave', leave.id, `${leave.leaveType} rejected${decisionNote ? ': ' + decisionNote : ''}`);
+    await notify(leave.employeeId, 'Leave rejected', `Your ${leave.leaveType} (${leave.startDate} → ${leave.endDate}) was rejected.${decisionNote ? ' Reason: ' + decisionNote : ''}`, 'leave');
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to reject leave' });
@@ -1112,21 +1132,25 @@ router.delete('/helpdesk/:id', authenticate, authorize(['admin']), async (req, r
   }
 });
 
-// Payroll — disabled by default; requires payroll module (admin always has it).
-async function requirePayrollAccess(req, res) {
+// Everyone can view their own payslips from join; company-wide / process needs payroll module or admin.
+async function requirePayrollManage(req, res) {
   const actor = await loadActor(req);
   if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return null; }
   if (actor.role === 'admin' || hasModule(actor, 'payroll')) return actor;
-  res.status(403).json({ error: 'Payroll is disabled for your account. Ask an administrator to grant access.' });
+  res.status(403).json({ error: 'Payroll management requires payroll module access.' });
   return null;
 }
 
 router.get('/payroll', authenticate, async (req, res) => {
   try {
-    const actor = await requirePayrollAccess(req, res);
-    if (!actor) return;
-    const where = actor.role === 'admin' ? {} : { employeeId: actor.id };
-    const payroll = await prisma.payroll.findMany({ where, include: { employee: { select: { name: true } } } });
+    const actor = await loadActor(req);
+    if (!actor) return res.status(401).json({ error: 'Unauthorized' });
+    // All employees see own slips; admin / payroll module see all.
+    const canAll = actor.role === 'admin' || hasModule(actor, 'payroll');
+    const where = canAll ? {} : { employeeId: actor.id };
+    const payroll = await prisma.payroll.findMany({
+      where, include: { employee: { select: { name: true } } }, orderBy: { paymentDate: 'desc' }
+    });
     res.json(payroll);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch payroll' });
@@ -1200,15 +1224,14 @@ router.post('/payroll/finalize', authenticate, authorize(['admin']), async (req,
 
 router.get('/payroll/cycles', authenticate, async (req, res) => {
   try {
-    if (!(await requirePayrollAccess(req, res))) return;
+    // Cycles visible to all (read-only); finalize still admin-only.
     res.json(await prisma.payrollCycle.findMany());
   } catch (error) { res.status(500).json({ error: 'Failed to fetch payroll cycles' }); }
 });
 
-// Tax declaration (own) — also gated by payroll module
+// Tax declaration (own) — every employee from join
 router.get('/tax', authenticate, async (req, res) => {
   try {
-    if (!(await requirePayrollAccess(req, res))) return;
     const tax = await prisma.taxDeclaration.findFirst({ where: { employeeId: req.user.id } });
     res.json(tax || null);
   } catch (error) {
@@ -1218,7 +1241,6 @@ router.get('/tax', authenticate, async (req, res) => {
 
 router.post('/tax', authenticate, async (req, res) => {
   try {
-    if (!(await requirePayrollAccess(req, res))) return;
     const data = {
       employeeId: req.user.id,
       section80C: Number(req.body.section80C) || 0,
@@ -1576,6 +1598,208 @@ router.put('/settings/company', authenticate, authorize(['admin']), async (req, 
     res.json(await getAllSettings());
   } catch (e) {
     res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+// ---- Org chart: self, chain up to root (CEO), and direct subordinates ----
+router.get('/org/me', authenticate, async (req, res) => {
+  try {
+    const all = await prisma.employee.findMany({
+      where: { status: { not: 'inactive' } },
+      select: {
+        id: true, name: true, designation: true, department: true,
+        managerId: true, avatar: true, email: true, role: true
+      }
+    });
+    const byId = Object.fromEntries(all.map((e) => [e.id, e]));
+    const me = byId[req.user.id];
+    if (!me) return res.status(404).json({ error: 'Not found' });
+    const chainUp = [];
+    let cur = me.managerId;
+    const seen = new Set();
+    while (cur && byId[cur] && !seen.has(cur)) {
+      seen.add(cur);
+      chainUp.push(byId[cur]);
+      cur = byId[cur].managerId;
+    }
+    const subordinates = all.filter((e) => e.managerId === me.id);
+    res.json({ me, chainUp, subordinates, peers: all.filter((e) => e.managerId === me.managerId && e.id !== me.id) });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load org chart' });
+  }
+});
+
+// ---- HR documents (offer, relieving, resignation letter, onboarding sign-off) ----
+const HR_DOC_TYPES = ['offer_letter', 'relieving_letter', 'resignation_ack', 'onboarding_signoff', 'appointment', 'other'];
+router.get('/hr-documents', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    const canManage = actor.role === 'admin' || isSupervisor(actor);
+    const where = canManage && req.query.all === '1' ? {} : { employeeId: req.user.id };
+    if (canManage && req.query.employeeId) where.employeeId = String(req.query.employeeId);
+    const rows = await prisma.hrDocument.findMany({ where, orderBy: { createdAt: 'desc' } });
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: 'Failed to list documents' }); }
+});
+router.post('/hr-documents', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    if (!isSupervisor(actor) && actor.role !== 'admin') return res.status(403).json({ error: 'HR/Admin access required to issue documents.' });
+    const { employeeId, type, title, body } = req.body;
+    if (!employeeId || !HR_DOC_TYPES.includes(type) || !title) {
+      return res.status(400).json({ error: 'employeeId, type, title required.' });
+    }
+    const doc = await prisma.hrDocument.create({
+      data: {
+        employeeId, type, title, body: body || null,
+        status: 'Issued', issuedBy: actor.id
+      }
+    });
+    await audit(actor, 'issue', 'hr-document', doc.id, `${type} → ${employeeId}`);
+    await notify(employeeId, 'New HR document', `${title} — please review and sign if required.`, 'onboarding');
+    res.json(doc);
+  } catch (e) { res.status(500).json({ error: 'Failed to issue document' }); }
+});
+router.post('/hr-documents/:id/sign', authenticate, async (req, res) => {
+  try {
+    const doc = await prisma.hrDocument.findUnique({ where: { id: req.params.id } });
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const actor = await loadActor(req);
+    if (doc.employeeId !== actor.id && actor.role !== 'admin') return res.status(403).json({ error: 'Only the employee (or admin) may sign.' });
+    const updated = await prisma.hrDocument.update({
+      where: { id: doc.id },
+      data: { status: 'Signed', signedAt: new Date(), signedBy: actor.id }
+    });
+    await audit(actor, 'sign', 'hr-document', doc.id, doc.type);
+    await notifySupervisors('Document signed', `${actor.name} signed: ${doc.title}`, 'onboarding');
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: 'Failed to sign' }); }
+});
+
+// ---- Resignation: employee → manager → HR/Admin ----
+router.get('/resignations', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    const isAdmin = actor.role === 'admin';
+    const isHr = isAdmin || (actor.department || '').toLowerCase().includes('hr');
+    const rows = await prisma.resignation.findMany({ orderBy: { createdAt: 'desc' } });
+    const emps = await prisma.employee.findMany({ select: { id: true, name: true, managerId: true, department: true } });
+    const nameOf = Object.fromEntries(emps.map((e) => [e.id, e.name]));
+    const visible = rows.filter((r) => {
+      if (isAdmin || isHr) return true;
+      if (r.employeeId === actor.id) return true;
+      if (r.managerId === actor.id || emps.find((e) => e.id === r.employeeId)?.managerId === actor.id) return true;
+      return false;
+    });
+    res.json(visible.map((r) => ({ ...r, employeeName: nameOf[r.employeeId] })));
+  } catch (e) { res.status(500).json({ error: 'Failed to list resignations' }); }
+});
+router.post('/resignations', authenticate, async (req, res) => {
+  try {
+    const { reason, lastWorkingDay } = req.body;
+    if (!reason || !lastWorkingDay) return res.status(400).json({ error: 'reason and lastWorkingDay required.' });
+    const me = await loadActor(req);
+    const existing = await prisma.resignation.findFirst({
+      where: { employeeId: me.id, status: { in: ['PendingManager', 'PendingHR'] } }
+    });
+    if (existing) return res.status(400).json({ error: 'You already have an open resignation request.' });
+    const row = await prisma.resignation.create({
+      data: {
+        employeeId: me.id, reason: String(reason).slice(0, 1000),
+        lastWorkingDay, status: 'PendingManager', managerId: me.managerId || null
+      }
+    });
+    await audit(me, 'submit', 'resignation', row.id, lastWorkingDay);
+    if (me.managerId) {
+      await notify(me.managerId, 'Resignation submitted', `${me.name} resigned (LWD ${lastWorkingDay}). Please review.`, 'permission');
+    }
+    const hrs = await prisma.employee.findMany({
+      where: { status: 'active', OR: [{ role: 'admin' }, { department: { contains: 'HR' } }] },
+      select: { id: true }
+    });
+    for (const h of hrs) {
+      if (h.id !== me.managerId) await notify(h.id, 'Resignation filed', `${me.name} submitted resignation — pending manager then HR.`, 'permission');
+    }
+    res.json(row);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Failed to submit resignation' }); }
+});
+router.put('/resignations/:id/decide', authenticate, async (req, res) => {
+  try {
+    const actor = await loadActor(req);
+    const row = await prisma.resignation.findUnique({ where: { id: req.params.id } });
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const action = req.body.action; // manager_approve | manager_reject | hr_approve | hr_reject | withdraw
+    const note = req.body.note ? String(req.body.note).slice(0, 500) : null;
+    const isAdmin = actor.role === 'admin';
+    const isHr = isAdmin || (actor.department || '').toLowerCase().includes('hr');
+    const emp = await prisma.employee.findUnique({ where: { id: row.employeeId }, select: { managerId: true, name: true } });
+
+    if (action === 'withdraw') {
+      if (row.employeeId !== actor.id || !['PendingManager', 'PendingHR'].includes(row.status)) {
+        return res.status(403).json({ error: 'Cannot withdraw.' });
+      }
+      const u = await prisma.resignation.update({ where: { id: row.id }, data: { status: 'Withdrawn', decidedAt: new Date() } });
+      return res.json(u);
+    }
+    if (action === 'manager_approve' || action === 'manager_reject') {
+      if (!isAdmin && emp?.managerId !== actor.id) return res.status(403).json({ error: 'Only reporting manager (or admin).' });
+      if (row.status !== 'PendingManager') return res.status(400).json({ error: 'Not awaiting manager.' });
+      if (action === 'manager_reject') {
+        const u = await prisma.resignation.update({
+          where: { id: row.id },
+          data: { status: 'Rejected', managerNote: note, decidedAt: new Date() }
+        });
+        await notify(row.employeeId, 'Resignation rejected by manager', note || 'Your manager rejected the resignation.', 'permission');
+        return res.json(u);
+      }
+      // Escalate to HR/Admin
+      const u = await prisma.resignation.update({
+        where: { id: row.id },
+        data: { status: 'PendingHR', managerNote: note }
+      });
+      await audit(actor, 'manager-approve', 'resignation', row.id, note || '');
+      const hrs = await prisma.employee.findMany({
+        where: { status: 'active', OR: [{ role: 'admin' }, { department: { contains: 'HR' } }] },
+        select: { id: true }
+      });
+      for (const h of hrs) await notify(h.id, 'Resignation needs HR decision', `${emp?.name} — manager approved. LWD on file.`, 'permission');
+      await notify(row.employeeId, 'Resignation with HR', 'Manager approved; awaiting HR/Admin.', 'permission');
+      return res.json(u);
+    }
+    if (action === 'hr_approve' || action === 'hr_reject') {
+      if (!isHr) return res.status(403).json({ error: 'HR or Admin only.' });
+      if (row.status !== 'PendingHR' && !(isAdmin && row.status === 'PendingManager')) {
+        return res.status(400).json({ error: 'Not awaiting HR.' });
+      }
+      if (action === 'hr_reject') {
+        const u = await prisma.resignation.update({
+          where: { id: row.id },
+          data: { status: 'Rejected', hrNote: note, decidedAt: new Date() }
+        });
+        await notify(row.employeeId, 'Resignation rejected by HR', note || '', 'permission');
+        return res.json(u);
+      }
+      const u = await prisma.resignation.update({
+        where: { id: row.id },
+        data: { status: 'Approved', hrNote: note, decidedAt: new Date() }
+      });
+      // Issue relieving letter draft + deactivate path notice
+      await prisma.hrDocument.create({
+        data: {
+          employeeId: row.employeeId, type: 'relieving_letter',
+          title: 'Relieving Letter (draft)', body: `Approved resignation. LWD: ${row.lastWorkingDay}.`,
+          status: 'Issued', issuedBy: actor.id
+        }
+      });
+      await notify(row.employeeId, 'Resignation approved', `HR approved. LWD ${row.lastWorkingDay}. Relieving letter issued for signature.`, 'permission');
+      if (emp?.managerId) await notify(emp.managerId, 'Resignation approved by HR', `${emp.name} exit approved.`, 'permission');
+      await audit(actor, 'hr-approve', 'resignation', row.id, note || '');
+      return res.json(u);
+    }
+    return res.status(400).json({ error: 'Unknown action' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to decide resignation' });
   }
 });
 
