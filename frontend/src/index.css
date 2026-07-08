@@ -1847,3 +1847,16 @@ a.kpi-link:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,
 .chain-me { border-color: var(--primary) !important; }
 .sub-list { padding-left: 1.2rem; }
 .dash-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.celeb-panel h4 { margin-bottom: 8px; }
+.celeb-row {
+  display: grid; grid-template-columns: 1fr; gap: 2px;
+  padding: 8px 10px; margin: 6px 0; border-radius: 10px;
+  background: var(--input-bg); border: 1px solid var(--bg-card-border);
+  font-size: 0.85rem;
+}
+.celeb-today { border-color: #f59e0b; background: #f59e0b22; }
+.policy-body {
+  white-space: pre-wrap; padding: 12px; line-height: 1.5;
+  background: var(--input-bg); border-radius: 8px; font-size: 0.9rem;
+}

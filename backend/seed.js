@@ -32,6 +32,12 @@ async function main() {
   try { await prisma.permissionRequest.deleteMany(); } catch { /* model may be new */ }
   try { await prisma.hrDocument.deleteMany(); } catch { /* */ }
   try { await prisma.resignation.deleteMany(); } catch { /* */ }
+  try { await prisma.expenseClaim.deleteMany(); } catch { /* */ }
+  try { await prisma.surveyResponse.deleteMany(); } catch { /* */ }
+  try { await prisma.survey.deleteMany(); } catch { /* */ }
+  try { await prisma.policyAck.deleteMany(); } catch { /* */ }
+  try { await prisma.policyDoc.deleteMany(); } catch { /* */ }
+  try { await prisma.form16.deleteMany(); } catch { /* */ }
   await prisma.employee.deleteMany();
 
   // Company defaults
@@ -73,7 +79,7 @@ async function main() {
       department: 'HR & Operations', designation: 'Managing Director & HR Head',
       email: 'rajesh@jjfo.com', password: passwordHash,
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      doj: '2020-01-15', age: 45, bloodGroup: 'O+', contact: '+91 98765 43210',
+      doj: '2020-07-08', dob: '1981-07-08', age: 45, bloodGroup: 'O+', contact: '+91 98765 43210',
       salaryBasic: 150000, salaryAllow: 40000, salaryDeduct: 12000,
       experience: JSON.stringify([{ company: 'Tata Family Trust', designation: 'GM Operations', duration: '6 Years' }]),
       documents: JSON.stringify({ relievingLetter: 'EMP001_RelievingLetter.pdf', idProof: 'EMP001_IDProof.pdf' }),
@@ -86,7 +92,7 @@ async function main() {
       department: 'Finance & Investments', designation: 'Senior Investment Analyst',
       email: 'priya@jjfo.com', password: passwordHash,
       avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-      doj: '2022-04-10', age: 32, bloodGroup: 'B+', contact: '+91 91234 56789',
+      doj: '2022-04-10', dob: '1994-07-09', age: 32, bloodGroup: 'B+', contact: '+91 91234 56789',
       salaryBasic: 110000, salaryAllow: 35000, salaryDeduct: 8000,
       experience: JSON.stringify([{ company: 'Kotak Wealth', designation: 'Investment Analyst', duration: '4 Years' }]),
       documents: JSON.stringify({ relievingLetter: 'EMP002_RelievingLetter.pdf' }),
@@ -101,7 +107,7 @@ async function main() {
       department: 'IT & Security', designation: 'Lead Systems Administrator',
       email: 'amit@jjfo.com', password: passwordHash,
       avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=150',
-      doj: '2021-08-01', age: 38, bloodGroup: 'A-', contact: '+91 99887 76655',
+      doj: '2021-08-01', dob: '1988-03-12', age: 38, bloodGroup: 'A-', contact: '+91 99887 76655',
       salaryBasic: 95000, salaryAllow: 25000, salaryDeduct: 5000,
       experience: JSON.stringify([{ company: 'Infosys', designation: 'SysAdmin', duration: '7 Years' }]),
       documents: JSON.stringify({ idProof: 'EMP003_IDProof.pdf' }),
@@ -114,7 +120,7 @@ async function main() {
       department: 'Legal & Compliance', designation: 'Compliance Officer',
       email: 'sneha@jjfo.com', password: passwordHash,
       avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-      doj: '2023-01-20', age: 29, bloodGroup: 'AB+', contact: '+91 98761 23456',
+      doj: '2023-01-20', dob: '1997-11-05', age: 29, bloodGroup: 'AB+', contact: '+91 98761 23456',
       salaryBasic: 85000, salaryAllow: 20000, salaryDeduct: 4000,
       experience: JSON.stringify([{ company: 'AZB & Partners', designation: 'Associate', duration: '3 Years' }]),
       documents: JSON.stringify({}),
@@ -127,7 +133,7 @@ async function main() {
       department: 'Real Estate Management', designation: 'Property Manager',
       email: 'vikram.candidate@jjfo.com', password: passwordHash,
       avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-      doj: '2026-07-01', age: 34, bloodGroup: 'O-', contact: '+91 90000 11122',
+      doj: '2026-07-01', dob: '1992-07-15', age: 34, bloodGroup: 'O-', contact: '+91 90000 11122',
       salaryBasic: 70000, salaryAllow: 15000, salaryDeduct: 0,
       experience: JSON.stringify([]), education: JSON.stringify([]), documents: JSON.stringify({}),
       managerId: 'EMP001', onboardingState: 'draft',
@@ -259,6 +265,54 @@ async function main() {
       { userId: 'EMP002', title: 'Leave awaiting your approval', body: 'Sneha Desai requested 9 days of Annual Leave (2-level approval).', kind: 'leave' }
     ]
   });
+
+  // ESS: expenses, surveys, policies, form16
+  await prisma.expenseClaim.createMany({
+    data: [
+      { employeeId: 'EMP004', category: 'Travel', amount: 4200, description: 'Client visit — Mumbai cab + meals', expenseDate: '2026-06-28', status: 'Pending' },
+      { employeeId: 'EMP003', category: 'Internet', amount: 1499, description: 'Home broadband reimbursement', expenseDate: '2026-06-01', status: 'Approved', decidedBy: 'EMP001' }
+    ]
+  });
+  await prisma.survey.create({
+    data: {
+      title: 'Q2 Engagement Pulse',
+      description: 'Anonymous-style pulse (responses are attributed for admin analytics).',
+      questions: JSON.stringify([
+        { id: 'q1', text: 'How supported do you feel by your manager?', type: 'scale' },
+        { id: 'q2', text: 'Would you recommend JJFO as a workplace?', type: 'scale' },
+        { id: 'q3', text: 'One thing we should improve', type: 'text' }
+      ]),
+      createdBy: 'EMP001',
+      active: true
+    }
+  });
+  await prisma.policyDoc.createMany({
+    data: [
+      {
+        title: 'Code of Conduct', category: 'HR', version: '2.1', mandatory: true, publishedBy: 'EMP001',
+        body: 'All employees must act with integrity, confidentiality, and respect. Conflicts of interest must be disclosed to HR.'
+      },
+      {
+        title: 'Information Security Policy', category: 'IT', version: '1.4', mandatory: true, publishedBy: 'EMP001',
+        body: 'Use company devices securely. Do not share credentials. Report incidents to IT within 24 hours.'
+      },
+      {
+        title: 'Leave & Attendance Policy', category: 'HR', version: '3.0', mandatory: false, publishedBy: 'EMP001',
+        body: 'Leave must be applied in the portal. Late applications are flagged. Holidays are excluded from leave duration.'
+      }
+    ]
+  });
+  // Sample Form 16 for active employees
+  for (const id of ['EMP001', 'EMP002', 'EMP003', 'EMP004']) {
+    const emp = employees.find((e) => e.id === id);
+    const gross = (emp.salaryBasic + emp.salaryAllow) * 12;
+    await prisma.form16.create({
+      data: {
+        employeeId: id, financialYear: '2025-26',
+        gross, tds: Math.round(gross * 0.08), netTaxable: Math.max(0, gross - 50000)
+      }
+    });
+  }
 
   console.log('Database seeding complete!');
 }

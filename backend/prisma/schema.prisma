@@ -18,6 +18,7 @@ model Employee {
   designation     String?
   avatar          String?
   doj             String?
+  dob             String?
   age             Int?
   bloodGroup      String?
   contact         String?
@@ -363,4 +364,85 @@ model Resignation {
 
   @@index([employeeId, status])
   @@index([status])
+}
+
+model ExpenseClaim {
+  id          String   @id @default(cuid())
+  employeeId  String
+  category    String
+  amount      Float
+  currency    String   @default("INR")
+  description String
+  expenseDate String
+  status      String   @default("Pending")
+  receiptNote String?
+  managerNote String?
+  decidedBy   String?
+  createdAt   DateTime @default(now())
+  decidedAt   DateTime?
+
+  @@index([employeeId, status])
+  @@index([status])
+}
+
+model Survey {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  questions   String
+  active      Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  closesAt    String?
+
+  @@index([active])
+}
+
+model SurveyResponse {
+  id         String   @id @default(cuid())
+  surveyId   String
+  employeeId String
+  answers    String
+  createdAt  DateTime @default(now())
+
+  @@unique([surveyId, employeeId])
+  @@index([surveyId])
+}
+
+model PolicyDoc {
+  id          String   @id @default(cuid())
+  title       String
+  category    String   @default("General")
+  version     String   @default("1.0")
+  body        String
+  mandatory   Boolean  @default(true)
+  active      Boolean  @default(true)
+  publishedBy String
+  createdAt   DateTime @default(now())
+
+  @@index([active])
+}
+
+model PolicyAck {
+  id         String   @id @default(cuid())
+  policyId   String
+  employeeId String
+  at         DateTime @default(now())
+
+  @@unique([policyId, employeeId])
+  @@index([employeeId])
+}
+
+model Form16 {
+  id         String   @id @default(cuid())
+  employeeId String
+  financialYear String
+  gross       Float
+  tds         Float
+  netTaxable  Float
+  status      String  @default("Issued")
+  issuedAt    DateTime @default(now())
+
+  @@unique([employeeId, financialYear])
+  @@index([employeeId])
 }

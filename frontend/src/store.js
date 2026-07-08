@@ -425,6 +425,68 @@ const useStore = create((set, get) => ({
   fetchOrgMe: async () => {
     try { set({ orgMe: await apiGet('/api/org/me') }); }
     catch (e) { console.error(e); }
+  },
+
+  // ESS: expenses, surveys, policies, form16, celebrations
+  expenses: [],
+  surveys: [],
+  policies: [],
+  form16List: [],
+  celebrations: null,
+
+  fetchExpenses: async () => {
+    try { set({ expenses: await apiGet('/api/expenses') }); } catch (e) { console.error(e); }
+  },
+  submitExpense: async (body) => {
+    await safe(() => apiMutate('/api/expenses', 'POST', body));
+    toastSuccess('Expense submitted');
+    await get().fetchExpenses();
+  },
+  decideExpense: async (id, approve, note) => {
+    await safe(() => apiMutate(`/api/expenses/${id}/decide`, 'PUT', { approve, note }));
+    toastSuccess(approve ? 'Expense approved' : 'Expense rejected');
+    await get().fetchExpenses();
+  },
+  fetchSurveys: async () => {
+    try { set({ surveys: await apiGet('/api/surveys') }); } catch (e) { console.error(e); }
+  },
+  createSurvey: async (body) => {
+    await safe(() => apiMutate('/api/surveys', 'POST', body));
+    await get().fetchSurveys();
+  },
+  respondSurvey: async (id, answers) => {
+    await safe(() => apiMutate(`/api/surveys/${id}/respond`, 'POST', { answers }));
+    toastSuccess('Survey submitted');
+    await get().fetchSurveys();
+  },
+  fetchPolicies: async () => {
+    try { set({ policies: await apiGet('/api/policies') }); } catch (e) { console.error(e); }
+  },
+  publishPolicy: async (body) => {
+    await safe(() => apiMutate('/api/policies', 'POST', body));
+    await get().fetchPolicies();
+  },
+  ackPolicy: async (id) => {
+    await safe(() => apiMutate(`/api/policies/${id}/ack`, 'POST'));
+    toastSuccess('Acknowledged');
+    await get().fetchPolicies();
+  },
+  fetchForm16: async () => {
+    try { set({ form16List: await apiGet('/api/form16') }); } catch (e) { console.error(e); }
+  },
+  issueForm16: async (financialYear) => {
+    await safe(() => apiMutate('/api/form16/issue', 'POST', { financialYear }));
+    toastSuccess('Form 16 issued');
+    await get().fetchForm16();
+  },
+  downloadPayslipPdf: (id) => {
+    window.open(`/api/payroll/${id}/pdf`, '_blank');
+  },
+  downloadForm16Pdf: (id) => {
+    window.open(`/api/form16/${id}/pdf`, '_blank');
+  },
+  fetchCelebrations: async () => {
+    try { set({ celebrations: await apiGet('/api/celebrations') }); } catch (e) { console.error(e); }
   }
 }));
 

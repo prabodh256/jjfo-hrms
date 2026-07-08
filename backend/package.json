@@ -13,7 +13,10 @@
     "test:smoke": "node --env-file=.env test/smoke.mjs",
     "test": "npm run test:smoke"
   },
-  "keywords": ["hrms", "jjfo"],
+  "keywords": [
+    "hrms",
+    "jjfo"
+  ],
   "author": "JJFO",
   "license": "UNLICENSED",
   "private": true,
@@ -28,6 +31,7 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
+    "pdfkit": "^0.19.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -20,6 +20,9 @@ import Settings from './components/Settings';
 import AuditLog from './components/AuditLog';
 import Reports from './components/Reports';
 import Workflows from './components/Workflows';
+import Expenses from './components/Expenses';
+import Engagement from './components/Engagement';
+import Policies from './components/Policies';
 
 const NAV = [
   { to: '/', key: 'dashboard', icon: 'dashboard', label: 'Dashboard', end: true },
@@ -27,6 +30,9 @@ const NAV = [
   { to: '/onboarding', key: 'onboarding', icon: 'how_to_reg', label: 'Onboarding' },
   { to: '/leaves', key: 'leaves', icon: 'event_note', label: 'Leave & Attendance' },
   { to: '/payroll', key: 'payroll', icon: 'payments', label: 'Payroll & Tax' },
+  { to: '/expenses', key: 'expenses', icon: 'receipt_long', label: 'Expenses' },
+  { to: '/engagement', key: 'engagement', icon: 'volunteer_activism', label: 'Engagement' },
+  { to: '/policies', key: 'policies', icon: 'policy', label: 'Policies' },
   { to: '/assets', key: 'assets', icon: 'devices', label: 'Asset Inventory' },
   { to: '/helpdesk', key: 'helpdesk', icon: 'support_agent', label: 'HR Helpdesk' },
   { to: '/workflows', key: 'onboarding', icon: 'assignment', label: 'HR Workflows' },
@@ -361,6 +367,9 @@ function MainApp() {
               <Route path="/onboarding" element={<Guard k="onboarding"><Onboarding /></Guard>} />
               <Route path="/leaves" element={<Guard k="leaves"><Leaves /></Guard>} />
               <Route path="/payroll" element={<Guard k="payroll"><Payroll /></Guard>} />
+              <Route path="/expenses" element={<Guard k="expenses"><Expenses /></Guard>} />
+              <Route path="/engagement" element={<Guard k="engagement"><Engagement /></Guard>} />
+              <Route path="/policies" element={<Guard k="policies"><Policies /></Guard>} />
               <Route path="/assets" element={<Guard k="assets"><Assets /></Guard>} />
               <Route path="/helpdesk" element={<Guard k="helpdesk"><Helpdesk /></Guard>} />
               <Route path="/workflows" element={<Workflows />} />

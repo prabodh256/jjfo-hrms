@@ -2,13 +2,17 @@
 
 const ALL_MODULES = [
   'dashboard', 'directory', 'onboarding', 'leaves', 'payroll', 'assets',
-  'helpdesk', 'permissions', 'gsync', 'settings', 'audit', 'reports'
+  'helpdesk', 'permissions', 'gsync', 'settings', 'audit', 'reports',
+  'expenses', 'engagement', 'policies'
 ];
 const ALL_CAPS = [
   'createUsers', 'approveLeaves', 'accessFinancials', 'manageHierarchy', 'moderateHelpdesk'
 ];
 // Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
-const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings', 'payroll'];
+const BASE_MODULES = [
+  'dashboard', 'leaves', 'helpdesk', 'settings', 'payroll',
+  'expenses', 'engagement', 'policies'
+];
 const LEVEL_RANK = { view: 1, edit: 2 };
 
 const parseJson = (s) => {

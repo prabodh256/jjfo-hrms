@@ -6,7 +6,8 @@ import { hasCap } from '../permissions';
 function Dashboard() {
   const {
     stats, fetchDashboardStats, user, leaves, fetchLeaves, employees, fetchEmployees,
-    attendance, fetchAttendance, clockIn, clockOut, notifications, fetchNotifications
+    attendance, fetchAttendance, clockIn, clockOut, notifications, fetchNotifications,
+    celebrations, fetchCelebrations
   } = useStore();
   const isAdmin = user?.role === 'admin';
   const canApprove = isAdmin || hasCap(user, 'approveLeaves');
@@ -17,8 +18,9 @@ function Dashboard() {
     fetchLeaves();
     fetchAttendance();
     fetchNotifications();
+    fetchCelebrations();
     if (isSupervisor) fetchEmployees();
-  }, [fetchDashboardStats, fetchLeaves, fetchAttendance, fetchNotifications, fetchEmployees, isSupervisor]);
+  }, [fetchDashboardStats, fetchLeaves, fetchAttendance, fetchNotifications, fetchCelebrations, fetchEmployees, isSupervisor]);
 
   if (!stats) return <div className="p-8">Loading stats...</div>;
 
@@ -105,11 +107,44 @@ function Dashboard() {
         </div>
       )}
 
+      <div className="glass p-6 celeb-panel" style={{ marginTop: 20 }}>
+        <h3>Office celebrations</h3>
+        <p className="text-muted" style={{ fontSize: '0.8rem' }}>Birthdays &amp; work anniversaries (next 14 days, entire office)</p>
+        <div className="grid-2" style={{ marginTop: 12, gap: 16 }}>
+          <div>
+            <h4 style={{ fontSize: '0.95rem' }}>🎂 Birthdays</h4>
+            {!(celebrations?.birthdays || []).length ? (
+              <p className="text-muted">None in the next two weeks.</p>
+            ) : celebrations.birthdays.map((b) => (
+              <div key={b.id} className={`celeb-row ${b.today ? 'celeb-today' : ''}`}>
+                <strong>{b.name}</strong>
+                <span className="text-muted">{b.department}</span>
+                <span>{b.today ? 'Today!' : b.when}{b.years ? ` · turns ${b.years}` : ''}</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <h4 style={{ fontSize: '0.95rem' }}>🏅 Work anniversaries</h4>
+            {!(celebrations?.anniversaries || []).length ? (
+              <p className="text-muted">None in the next two weeks.</p>
+            ) : celebrations.anniversaries.map((a) => (
+              <div key={a.id} className={`celeb-row ${a.today ? 'celeb-today' : ''}`}>
+                <strong>{a.name}</strong>
+                <span className="text-muted">{a.designation}</span>
+                <span>{a.today ? 'Today!' : a.when} · {a.years} year{a.years === 1 ? '' : 's'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="dash-quick" style={{ marginTop: 20 }}>
         <Link to="/directory" className="btn btn-secondary btn-sm">Org &amp; directory</Link>
-        <Link to="/payroll" className="btn btn-secondary btn-sm">My payslips</Link>
+        <Link to="/payroll" className="btn btn-secondary btn-sm">Payslips / Form 16</Link>
+        <Link to="/expenses" className="btn btn-secondary btn-sm">Expenses</Link>
+        <Link to="/policies" className="btn btn-secondary btn-sm">Policies</Link>
+        <Link to="/engagement" className="btn btn-secondary btn-sm">Surveys</Link>
         <Link to="/workflows" className="btn btn-secondary btn-sm">HR workflows</Link>
-        <Link to="/helpdesk" className="btn btn-secondary btn-sm">Helpdesk</Link>
       </div>
     </div>
   );

@@ -12,7 +12,10 @@ export const MODULES = [
   { key: 'gsync', label: 'Document Vault' },
   { key: 'settings', label: 'Settings' },
   { key: 'audit', label: 'Audit Log' },
-  { key: 'reports', label: 'Reports' }
+  { key: 'reports', label: 'Reports' },
+  { key: 'expenses', label: 'Expenses' },
+  { key: 'engagement', label: 'Engagement' },
+  { key: 'policies', label: 'Policies' }
 ];
 
 export const CAPS = [
@@ -24,7 +27,10 @@ export const CAPS = [
 ];
 
 // Everyone can open Payroll for own payslips; company-wide processing remains admin.
-export const BASE_MODULES = ['dashboard', 'leaves', 'helpdesk', 'settings', 'payroll'];
+export const BASE_MODULES = [
+  'dashboard', 'leaves', 'helpdesk', 'settings', 'payroll',
+  'expenses', 'engagement', 'policies'
+];
 
 export function parsePerms(raw) {
   try { return typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {}); }

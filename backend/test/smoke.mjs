@@ -219,6 +219,33 @@ async function main() {
   const payAdmin = await api('GET', '/api/payroll', { cookie: admin.cookie });
   check('T-PAY  admin payroll allowed', payAdmin.status === 200);
 
+  // ESS modules
+  const celeb = await api('GET', '/api/celebrations', { cookie: admin.cookie });
+  check('T-ESS celebrations payload', celeb.status === 200 && Array.isArray(celeb.json?.birthdays), `status=${celeb.status}`);
+  const exp2 = await api('POST', '/api/expenses', {
+    cookie: priya.cookie,
+    body: { category: 'Travel', amount: 500, description: 'smoke cab', expenseDate: '2026-07-01' }
+  });
+  check('T-ESS expense submit', exp2.status === 200, `status=${exp2.status}`);
+  const pols = await api('GET', '/api/policies', { cookie: priya.cookie });
+  check('T-ESS policies list', pols.status === 200 && Array.isArray(pols.json) && pols.json.length > 0);
+  if (pols.json?.[0] && !pols.json[0].acknowledged) {
+    const ack = await api('POST', `/api/policies/${pols.json[0].id}/ack`, { cookie: priya.cookie });
+    check('T-ESS policy ack', ack.status === 200);
+  } else check('T-ESS policy ack', true);
+  const surv = await api('GET', '/api/surveys', { cookie: priya.cookie });
+  check('T-ESS surveys list', surv.status === 200 && Array.isArray(surv.json));
+  const f16 = await api('GET', '/api/form16', { cookie: priya.cookie });
+  check('T-ESS form16 list', f16.status === 200 && Array.isArray(f16.json));
+  // PDF payslip if any exists for admin
+  const slips = payAdmin.json || [];
+  if (slips[0]?.id) {
+    const pdfRes = await fetch(`${BASE}/api/payroll/${slips[0].id}/pdf`, { headers: { Cookie: admin.cookie } });
+    check('T-ESS payslip PDF', pdfRes.status === 200 && (pdfRes.headers.get('content-type') || '').includes('pdf'), `status=${pdfRes.status}`);
+  } else {
+    check('T-ESS payslip PDF', true, '(no slip)');
+  }
+
   // Bulk leave allotment (admin)
   const bulk = await api('POST', '/api/leave-balances/bulk', {
     cookie: admin.cookie,

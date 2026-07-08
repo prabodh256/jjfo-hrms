@@ -26,6 +26,7 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const apiRoutes = require('./routes/api');
+const essRoutes = require('./routes/ess');
 const { requireCsrfHeader } = require('./middleware/auth');
 const prisma = require('./prisma/client');
 const { purgeExpiredSessions } = require('./lib/sessions');
@@ -75,6 +76,7 @@ app.get('/ready', async (_req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/api', requireCsrfHeader, apiRoutes);
+app.use('/api', requireCsrfHeader, essRoutes);
 
 app.use((err, req, res, _next) => {
   console.error(`[${req.requestId || '-'}]`, err.stack || err);
