@@ -44,6 +44,7 @@ const NAV = [
 ];
 
 const canSee = (user, item) =>
+  item.key === 'payroll' || // every employee may access their own payslips
   hasModule(user, item.key) ||
   (item.capAlt && hasCap(user, item.capAlt)) ||
   (item.key === 'onboarding' && user.onboardingState && user.onboardingState !== 'approved');
