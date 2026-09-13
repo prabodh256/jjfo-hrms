@@ -28,7 +28,7 @@ export const CAPS = [
 
 // Everyone can open Payroll for own payslips; company-wide processing remains admin.
 export const BASE_MODULES = [
-  'dashboard', 'leaves', 'helpdesk', 'settings', 'payroll',
+  'dashboard', 'leaves', 'helpdesk', 'settings',
   'expenses', 'engagement', 'policies'
 ];
 
