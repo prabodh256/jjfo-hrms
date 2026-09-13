@@ -6,25 +6,25 @@ html { font-size: var(--app-font-size, 16px); }
 
 :root {
   /* Dark Theme Palette (Default) */
-  --bg-app: #090d16;
-  --bg-sidebar: #0f1524;
-  --bg-card: rgba(21, 30, 52, 0.7);
-  --bg-card-hover: rgba(29, 41, 70, 0.85);
-  --bg-card-border: rgba(255, 255, 255, 0.07);
+  --bg-app: #1f1209;
+  --bg-sidebar: #28170c;
+  --bg-card: rgba(55, 31, 14, 0.82);
+  --bg-card-hover: rgba(73, 39, 16, 0.92);
+  --bg-card-border: rgba(251, 146, 60, 0.16);
   
-  --primary: #6366f1; /* Vibrant Indigo */
-  --primary-hover: #4f46e5;
-  --secondary: #14b8a6; /* Vivid Teal */
-  --secondary-hover: #0d9488;
-  --accent: #f43f5e; /* Rose Coral */
+  --primary: #fb923c; /* Warm Orange */
+  --primary-hover: #f97316;
+  --secondary: #f59e0b; /* Amber */
+  --secondary-hover: #d97706;
+  --accent: #f97316; /* Orange */
   
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #fff7ed;
+  --text-secondary: #fed7aa;
+  --text-muted: #fdba74;
   
-  --input-bg: rgba(15, 23, 42, 0.6);
-  --input-border: rgba(255, 255, 255, 0.1);
-  --input-focus: #6366f1;
+  --input-bg: rgba(67, 34, 12, 0.64);
+  --input-border: rgba(251, 146, 60, 0.22);
+  --input-focus: #fb923c;
 
   --badge-success-bg: rgba(16, 185, 129, 0.15);
   --badge-success-text: #34d399;
@@ -44,25 +44,25 @@ html { font-size: var(--app-font-size, 16px); }
 
 [data-theme="light"] {
   /* Light Theme Palette */
-  --bg-app: #f4f7fa;
-  --bg-sidebar: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.75);
-  --bg-card-hover: rgba(255, 255, 255, 0.95);
-  --bg-card-border: rgba(99, 102, 241, 0.08);
+  --bg-app: #fff7ed;
+  --bg-sidebar: #fffdfa;
+  --bg-card: rgba(255, 255, 255, 0.94);
+  --bg-card-hover: #fffaf5;
+  --bg-card-border: rgba(234, 88, 12, 0.14);
   
-  --primary: #4f46e5;
-  --primary-hover: #3730a3;
-  --secondary: #0d9488;
-  --secondary-hover: #0f766e;
-  --accent: #e11d48;
+  --primary: #f97316;
+  --primary-hover: #ea580c;
+  --secondary: #fb923c;
+  --secondary-hover: #f97316;
+  --accent: #f59e0b;
   
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-primary: #431407;
+  --text-secondary: #7c2d12;
+  --text-muted: #9a3412;
   
-  --input-bg: #ffffff;
-  --input-border: rgba(0, 0, 0, 0.1);
-  --input-focus: #4f46e5;
+  --input-bg: #fffaf5;
+  --input-border: rgba(234, 88, 12, 0.18);
+  --input-focus: #f97316;
 
   --badge-success-bg: rgba(16, 185, 129, 0.1);
   --badge-success-text: #059669;
@@ -73,7 +73,7 @@ html { font-size: var(--app-font-size, 16px); }
   --badge-info-bg: rgba(37, 99, 235, 0.1);
   --badge-info-text: #2563eb;
 
-  --shadow: 0 8px 30px 0 rgba(31, 38, 135, 0.05);
+  --shadow: 0 10px 30px rgba(154, 52, 18, 0.09);
 }
 
 * {
@@ -105,7 +105,7 @@ body {
 
 .glass:hover {
   background: var(--bg-card-hover);
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: rgba(249, 115, 22, 0.2);
 }
 
 /* Scrollbar styling */
@@ -175,8 +175,8 @@ body {
 
 .menu-link:hover, .menu-item.active .menu-link, .menu-link.active {
   color: var(--text-primary);
-  background: linear-gradient(135deg, var(--primary) 0%, rgba(99, 102, 241, 0.6) 100%);
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, var(--primary) 0%, rgba(249, 115, 22, 0.6) 100%);
+  box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3);
 }
 
 .menu-link i {
@@ -395,8 +395,8 @@ body {
   border: none;
   cursor: pointer;
   color: #fff;
-  background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, var(--primary) 0%, #ea580c 100%);
+  box-shadow: 0 4px 15px rgba(249, 115, 22, 0.4);
   transition: var(--transition);
 }
 
@@ -536,7 +536,7 @@ body {
 
 .form-control:focus {
   border-color: var(--input-focus);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
 }
 
 .form-group {
@@ -964,7 +964,7 @@ tr:last-child td {
 }
 
 tr:hover td {
-  background: rgba(99, 102, 241, 0.03);
+  background: rgba(249, 115, 22, 0.03);
 }
 
 /* Onboarding view Wizard */
@@ -1010,7 +1010,7 @@ tr:hover td {
   border-color: var(--primary);
   background: var(--primary);
   color: #fff;
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
 }
 
 .wizard-slide {
@@ -1475,7 +1475,7 @@ table.table { width: 100%; }
   outline: none;
   font-family: var(--font-body);
 }
-.input-with-icon input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
+.input-with-icon input:focus { border-color: var(--input-focus); box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2); }
 
 /* Utility classes referenced by components */
 .p-6 { padding: 24px; }
@@ -1659,7 +1659,7 @@ textarea.form-control { min-height: 84px; resize: vertical; }
 .perm-level-opts { display: flex; gap: 12px; font-size: 0.8rem; }
 .perm-level-opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .form-ok { color: #6ee7b7; font-size: 0.9rem; }
-.trail-team-row td:first-child { border-left: 3px solid var(--primary, #4f46e5); }
+.trail-team-row td:first-child { border-left: 3px solid var(--primary, #ea580c); }
 
 /* Permission picker (delegated grants) */
 .perm-picker { margin-top: 4px; }
@@ -1704,7 +1704,7 @@ textarea.form-control { min-height: 84px; resize: vertical; }
 }
 .toast-success { border-color: #10b981; }
 .toast-error { border-color: #ef4444; }
-.toast-info { border-color: #4f46e5; }
+.toast-info { border-color: #ea580c; }
 
 .search-wrap { position: relative; flex: 1; max-width: 420px; }
 .search-panel {
@@ -2068,7 +2068,7 @@ a.kpi-link:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid var(--primary);
-  background: #3730a3;
+  background: #c2410c;
 }
 .account-summary {
   display: flex;
@@ -2209,4 +2209,22 @@ a.kpi-link:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,
   .topbar-search {
     max-width: calc(100vw - 150px);
   }
+}
+
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(251, 146, 60, 0.14), transparent 28%),
+    radial-gradient(circle at 90% 92%, rgba(245, 158, 11, 0.10), transparent 30%);
+}
+[data-theme="light"] .sidebar {
+  box-shadow: 8px 0 28px rgba(154, 52, 18, 0.05);
+}
+[data-theme="light"] .menu-link:hover,
+[data-theme="light"] .menu-link.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+  box-shadow: 0 5px 14px rgba(234, 88, 12, 0.22);
+}
+[data-theme="light"] .glass {
+  box-shadow: 0 8px 28px rgba(154, 52, 18, 0.08);
 }
