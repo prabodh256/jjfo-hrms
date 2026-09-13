@@ -20,6 +20,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - run: cp .env.example .env
       - run: npx prisma generate
       - name: Syntax check
         run: node --check server.js && node --check routes/api.js && node --check routes/auth.js && node --check routes/ess.js
