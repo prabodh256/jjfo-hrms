@@ -3,7 +3,7 @@
 Jamshed Jeejeebhoy Family Office — Core Enterprise Suite (HRMS).
 
 **Stack:** React 19 + Vite · Express 5 · Prisma · SQLite  
-**Default demo password:** `password123` (intentionally kept for local demos)
+**Local demo password:** `password123` for seeded dummy accounts only. Production employee creation requires a unique temporary password of at least 12 characters.
 
 ## Quick start
 
@@ -59,7 +59,9 @@ Prisma → SQLite (dev.db) + uploads/
 - httpOnly cookies; sessions table with `jti` (logout / password change revokes)
 - Login rate limit; Helmet; CORS origin lock
 - CSRF custom header on mutating `/api` routes
-- Salary fields redacted unless self / admin / `accessFinancials`
+- Salary fields redacted unless self / admin / explicit `accessFinancials`
+- Payroll records restricted to self unless explicitly authorized
+- Helpdesk tickets restricted to owner or moderator
 - Hard employee delete requires `X-Confirm-Hard-Delete: true` (prefer deactivate)
 - File uploads: size + extension + MIME checks; randomized filenames
 
@@ -91,10 +93,10 @@ cd backend && npm run test:smoke
 ## Docker
 
 ```bash
-docker compose up --build
+JWT_SECRET="$(openssl rand -hex 32)" docker compose up --build
 ```
 
-Set a strong `JWT_SECRET` in the environment for non-local use.
+Open http://localhost:4000. The production image serves both the built frontend and API.
 
 ## Production checklist
 
@@ -103,7 +105,8 @@ Set a strong `JWT_SECRET` in the environment for non-local use.
 3. Do **not** commit `*.db` or `.env`
 4. Prefer **deactivate** over hard delete
 5. Back up SQLite (or migrate to Postgres) + `uploads/`
-6. Change all demo passwords before any real HR data
+6. Never run the demo seed against a production database
+7. Use unique temporary passwords and require employees to change them securely
 
 ## Project layout
 
