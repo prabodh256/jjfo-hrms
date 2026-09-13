@@ -31,6 +31,19 @@ const helpdeskReplySchema = z.object({
   resolve: z.boolean().optional().default(false)
 }).strict();
 
+const EMPLOYEE_WRITE_FIELDS = new Set([
+  'email', 'name', 'role', 'status', 'department', 'designation', 'avatar',
+  'doj', 'dob', 'age', 'bloodGroup', 'contact', 'salaryBasic', 'salaryAllow',
+  'salaryDeduct', 'experience', 'education', 'documents', 'managerId',
+  'preferences', 'permissions', 'onboardingState', 'onboardingNote', 'password'
+]);
+
+function pickEmployeeInput(input) {
+  return Object.fromEntries(
+    Object.entries(input || {}).filter(([key]) => EMPLOYEE_WRITE_FIELDS.has(key))
+  );
+}
+
 const safeName = (name) => (name || '').replace(/\s+/g, '');
 
 async function loadActor(req) {
@@ -292,7 +305,14 @@ router.post('/employees', authenticate, async (req, res) => {
     if (!isAdmin && !actorPerms.caps.createUsers) {
       return res.status(403).json({ error: 'You do not have permission to add users.' });
     }
-    const data = coerceEmployeeNumbers({ ...req.body });
+    const email = z.string().trim().email().safeParse(req.body.email);
+    const name = z.string().trim().min(2).max(120).safeParse(req.body.name);
+    if (!email.success || !name.success) {
+      return res.status(400).json({ error: 'A valid name and email are required.' });
+    }
+    const data = coerceEmployeeNumbers(pickEmployeeInput(req.body));
+    data.email = email.data.toLowerCase();
+    data.name = name.data;
     // Delegated grants must be a SUBSET of what the creator holds.
     const requested = normalizePerms(req.body.permissions);
     if (!isAdmin && !isSubset(requested, actorPerms)) {
@@ -305,8 +325,15 @@ router.post('/employees', authenticate, async (req, res) => {
       data.managerId = data.managerId || actor.id;
     }
     data.id = data.id || await nextEmployeeId();
-    // New hires get a default password (password123) until they change it.
-    data.password = await bcrypt.hash(data.password || 'password123', 12);
+    const rawPassword = typeof data.password === 'string' ? data.password : '';
+    if (rawPassword && rawPassword.length < 12) {
+      return res.status(400).json({ error: 'Temporary password must be at least 12 characters.' });
+    }
+    if (process.env.NODE_ENV === 'production' && !rawPassword) {
+      return res.status(400).json({ error: 'A secure temporary password is required in production.' });
+    }
+    // Local smoke/demo data may omit this; production can never fall back to it.
+    data.password = await bcrypt.hash(rawPassword || 'password123', 12);
     const employee = await prisma.$transaction(async (tx) => {
       const emp = await tx.employee.create({ data, omit: { password: true } });
       await tx.leaveBalance.upsert({
@@ -1438,8 +1465,8 @@ router.put('/employees/:id/permissions', authenticate, async (req, res) => {
 // Onboarding / generic employee update (admin)
 router.put('/employees/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
-    const data = coerceEmployeeNumbers({ ...req.body });
-    delete data.id; delete data.email; delete data.password;
+    const data = coerceEmployeeNumbers(pickEmployeeInput(req.body));
+    delete data.email; delete data.password;
     const emp = await prisma.employee.update({ where: { id: req.params.id }, data, omit: { password: true } });
     await syncEmployeeDrive(emp);
     await audit(req.user, 'update', 'employee', emp.id, Object.keys(data).join(', '));
