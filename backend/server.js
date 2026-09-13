@@ -28,6 +28,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const apiRoutes = require('./routes/api');
 const essRoutes = require('./routes/ess');
+const enterpriseRoutes = require('./routes/enterprise');
 const { requireCsrfHeader } = require('./middleware/auth');
 const prisma = require('./prisma/client');
 const { purgeExpiredSessions } = require('./lib/sessions');
@@ -82,6 +83,7 @@ app.get('/ready', async (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/api', requireCsrfHeader, apiRoutes);
 app.use('/api', requireCsrfHeader, essRoutes);
+app.use('/api/enterprise', requireCsrfHeader, enterpriseRoutes);
 
 // The production image includes the built SPA. Keep API routes above this
 // fallback so unknown API requests never receive index.html.
