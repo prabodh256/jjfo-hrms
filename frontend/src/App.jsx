@@ -457,7 +457,7 @@ function Login() {
         {forgot ? (
           <form onSubmit={handleForgot}>
             <p style={{ fontSize: '0.85rem', opacity: 0.85, marginBottom: '1rem' }}>
-              Enter your work email. An administrator will be notified to reset your password (default demo password remains <code>password123</code> for new accounts).
+              Enter your work email. An administrator will be notified to reset your password securely.
             </p>
             <div className="form-group">
               <label htmlFor="forgot-email">Employee Email</label>
