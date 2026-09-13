@@ -2228,3 +2228,77 @@ a.kpi-link:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,
 [data-theme="light"] .glass {
   box-shadow: 0 8px 28px rgba(154, 52, 18, 0.08);
 }
+
+.demo-portals {
+  margin: 0 0 18px;
+}
+.demo-portals > p {
+  margin-bottom: 9px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+.demo-portals > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.demo-portals button {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.demo-portals button:hover,
+.demo-portals button:focus-visible {
+  border-color: var(--primary);
+  background: rgba(249, 115, 22, 0.09);
+  outline: none;
+  transform: translateY(-1px);
+}
+.demo-portals button > i {
+  color: var(--primary);
+  font-size: 24px;
+}
+.demo-portals button span,
+.demo-portals button strong,
+.demo-portals button small {
+  display: block;
+}
+.demo-portals button strong {
+  font-size: 0.76rem;
+}
+.demo-portals button small {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1.25;
+}
+.demo-divider {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 13px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.demo-divider::before,
+.demo-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--input-border);
+}
+@media (max-width: 420px) {
+  .demo-portals > div {
+    grid-template-columns: 1fr;
+  }
+}
