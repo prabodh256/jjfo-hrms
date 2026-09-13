@@ -44,6 +44,8 @@ async function main() {
   check('T-SEC  admin login 200 + cookie', admin.status === 200 && !!admin.cookie, `status=${admin.status}`);
   const priya = await login('priya@jjfo.com', 'password123');
   check('T-SEC  delegated (priya) login 200', priya.status === 200 && !!priya.cookie, `status=${priya.status}`);
+  const sneha = await login('sneha@jjfo.com', 'password123');
+  check('T-SEC  plain employee (sneha) login 200', sneha.status === 200 && !!sneha.cookie, `status=${sneha.status}`);
 
   // Rejected either by validation (400) or, if the limiter has warmed up, 429 — both prove no session is issued.
   const badEmail = await login('not-an-email', 'x');
@@ -54,6 +56,30 @@ async function main() {
   check('T-SEC  missing CSRF header on mutation → 403', noCsrf.status === 403, `status=${noCsrf.status}`);
   const emps = await api('GET', '/api/employees', { cookie: admin.cookie });
   check('T-SEC  no password hash in /api/employees', emps.status === 200 && !JSON.stringify(emps.json).includes('"password"'));
+
+  // Privacy boundaries: self-service must never imply company-wide HR access.
+  const plainDirectory = await api('GET', '/api/employees', { cookie: sneha.cookie });
+  const anotherEmployee = plainDirectory.json?.find?.((e) => e.id === 'EMP002');
+  check('T-PRIV other employee salary redacted', plainDirectory.status === 200 && anotherEmployee?.salaryBasic === undefined);
+
+  const plainPayroll = await api('GET', '/api/payroll', { cookie: sneha.cookie });
+  check('T-PRIV payroll limited to own records', plainPayroll.status === 200 &&
+    plainPayroll.json?.every?.((p) => p.employeeId === 'EMP004'));
+
+  const plainTickets = await api('GET', '/api/helpdesk', { cookie: sneha.cookie });
+  check('T-PRIV helpdesk limited to own tickets', plainTickets.status === 200 &&
+    plainTickets.json?.every?.((t) => t.employeeId === 'EMP004') &&
+    !plainTickets.json?.some?.((t) => t.id === 'TCK001'));
+
+  const privateSearch = await api('GET', '/api/search?q=Bloomberg', { cookie: sneha.cookie });
+  check('T-PRIV global search hides others tickets', privateSearch.status === 200 &&
+    privateSearch.json?.tickets?.length === 0);
+
+  const invalidTicket = await api('POST', '/api/helpdesk', {
+    cookie: sneha.cookie,
+    body: { subject: '', category: 'X', description: '', priority: 'Impossible' }
+  });
+  check('T-VALID helpdesk payload validated', invalidTicket.status === 400);
 
   // ---- Delegated permissions (subset) ----
   const g = await api('GET', '/api/permissions/grantable', { cookie: priya.cookie });
