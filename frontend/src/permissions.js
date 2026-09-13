@@ -15,7 +15,9 @@ export const MODULES = [
   { key: 'reports', label: 'Reports' },
   { key: 'expenses', label: 'Expenses' },
   { key: 'engagement', label: 'Engagement' },
-  { key: 'policies', label: 'Policies' }
+  { key: 'policies', label: 'Policies' },
+  { key: 'insurance', label: 'Insurance & Benefits' },
+  { key: 'peopleops', label: 'People Operations Centre' }
 ];
 
 export const CAPS = [
@@ -29,7 +31,7 @@ export const CAPS = [
 // Everyone can open Payroll for own payslips; company-wide processing remains admin.
 export const BASE_MODULES = [
   'dashboard', 'leaves', 'helpdesk', 'settings',
-  'expenses', 'engagement', 'policies'
+  'expenses', 'engagement', 'policies', 'insurance'
 ];
 
 export function parsePerms(raw) {
