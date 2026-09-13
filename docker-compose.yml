@@ -1,40 +1,27 @@
 services:
-  api:
+  hrms:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "4000:4000"
     environment:
-      JWT_SECRET: ${JWT_SECRET:-jjfo-docker-dev-secret-min-32-chars!!}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a random value of at least 32 characters}
       PORT: 4000
       NODE_ENV: production
-      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:4000}
       DATABASE_URL: file:./data/prod.db
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
     volumes:
       - hrms-data:/app/prisma/data
       - hrms-uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-  web:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
-    ports:
-      - "5173:5173"
-    environment:
-      VITE_API_TARGET: http://api:4000
-    volumes:
-      - ./frontend:/app
-      - web-modules:/app/node_modules
-    depends_on:
-      - api
+    restart: unless-stopped
 
 volumes:
   hrms-data:
   hrms-uploads:
-  web-modules:
