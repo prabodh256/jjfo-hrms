@@ -11,7 +11,7 @@ export function parsePrefs(raw) {
 
 export function applyPreferences(prefs = {}) {
   const root = document.documentElement;
-  root.setAttribute('data-theme', prefs.theme === 'light' ? 'light' : 'dark');
+  root.setAttribute('data-theme', prefs.theme === 'dark' ? 'dark' : 'light');
   root.style.setProperty('--app-font-size', FONT_SIZES[prefs.fontSize] || '16px');
   if (prefs.font) {
     root.style.setProperty('--font-body', `'${prefs.font}', sans-serif`);
@@ -19,4 +19,4 @@ export function applyPreferences(prefs = {}) {
   }
 }
 
-export const DEFAULT_PREFS = { theme: 'dark', font: 'Outfit', fontSize: 'medium' };
+export const DEFAULT_PREFS = { theme: 'light', font: 'Outfit', fontSize: 'medium' };
