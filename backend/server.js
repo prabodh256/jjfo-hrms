@@ -67,7 +67,7 @@ app.use(rateLimit({
 }));
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), ts: new Date().toISOString() });
+  res.json({ status: 'ok', demo: process.env.SEED_DEMO === '1', uptime: process.uptime(), ts: new Date().toISOString() });
 });
 
 app.get('/ready', async (_req, res) => {
