@@ -10,7 +10,7 @@ const ALL_CAPS = [
 ];
 // Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
 const BASE_MODULES = [
-  'dashboard', 'leaves', 'helpdesk', 'settings', 'payroll',
+  'dashboard', 'leaves', 'helpdesk', 'settings',
   'expenses', 'engagement', 'policies'
 ];
 const LEVEL_RANK = { view: 1, edit: 2 };
@@ -85,6 +85,16 @@ function hasModuleEdit(emp, key) {
   return effectivePerms(emp).moduleLevels[key] === 'edit';
 }
 
+// Payroll self-service (viewing one's own records) is handled by resource
+// ownership checks. Company-wide payroll access must be explicitly granted.
+function canViewAllPayroll(emp) {
+  return !!emp && (
+    emp.role === 'admin' ||
+    effectivePerms(emp).caps.accessFinancials ||
+    hasModule(emp, 'payroll')
+  );
+}
+
 function levelOk(grantedLevel, granterLevel) {
   return (LEVEL_RANK[granterLevel] || 0) >= (LEVEL_RANK[grantedLevel] || 0);
 }
@@ -117,8 +127,7 @@ function redactEmployee(emp, viewer) {
   const canSeePay =
     viewer?.role === 'admin' ||
     viewer?.id === emp.id ||
-    effectivePerms(viewer).caps.accessFinancials ||
-    hasModule(viewer, 'payroll');
+    effectivePerms(viewer).caps.accessFinancials;
   if (!canSeePay) {
     delete out.salaryBasic;
     delete out.salaryAllow;
@@ -147,6 +156,7 @@ module.exports = {
   effectivePerms,
   hasModule,
   hasModuleEdit,
+  canViewAllPayroll,
   isSubset,
   isSupervisor,
   redactEmployee,
