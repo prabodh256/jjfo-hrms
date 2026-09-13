@@ -8,7 +8,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const prisma = require('../prisma/client');
 const {
   parseJson, effectivePerms, isSubset, normalizePerms, isSupervisor,
-  redactEmployee, redactEmployees, hasModule, canViewAllPayroll, makeStamp
+  redactEmployee, redactEmployees, hasModule, hasModuleEdit, canViewAllPayroll, makeStamp
 } = require('../lib/perms');
 const { audit, notify } = require('../lib/audit');
 const { parsePagination, paginated } = require('../lib/pagination');
@@ -35,6 +35,13 @@ const safeName = (name) => (name || '').replace(/\s+/g, '');
 
 async function loadActor(req) {
   return prisma.employee.findUnique({ where: { id: req.user.id } });
+}
+
+function canReviewOnboarding(actor) {
+  return !!actor && (
+    actor.role === 'admin' ||
+    (hasModuleEdit(actor, 'onboarding') && effectivePerms(actor).caps.createUsers)
+  );
 }
 
 // ---- Real document storage (backend/uploads/<empId>/<docKey>.<ext>) ----
@@ -83,7 +90,7 @@ function fileAccess(forUpload) {
       if (!EMP_ID_RE.test(empId) || !DOC_KEY_RE.test(docKey)) return res.status(400).json({ error: 'Invalid file reference.' });
       const actor = await loadActor(req);
       if (!actor) return res.status(401).json({ error: 'Account no longer exists.' });
-      if (isSupervisor(actor)) return next();
+      if (canReviewOnboarding(actor)) return next();
       if (actor.id !== empId) return res.status(403).json({ error: 'Not allowed.' });
       if (forUpload && !ONBOARDING_EDITABLE.has(actor.onboardingState)) {
         return res.status(403).json({ error: 'Your onboarding is locked.' });
@@ -95,7 +102,7 @@ function fileAccess(forUpload) {
 
 async function notifySupervisors(title, body, kind) {
   const emps = await prisma.employee.findMany({ where: { status: 'active' } });
-  for (const e of emps) if (isSupervisor(e)) await notify(e.id, title, body, kind);
+  for (const e of emps) if (canReviewOnboarding(e)) await notify(e.id, title, body, kind);
 }
 
 // Onboarding is only editable by the employee in these states.
@@ -321,7 +328,7 @@ router.post('/employees', authenticate, async (req, res) => {
 // or header X-Confirm-Hard-Delete: true.
 router.delete('/employees/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
-    const allowed = process.env.ALLOW_HARD_DELETE === '1' ||
+    const allowed = process.env.ALLOW_HARD_DELETE === '1' &&
       req.get('X-Confirm-Hard-Delete') === 'true';
     if (!allowed) {
       return res.status(400).json({
@@ -419,7 +426,7 @@ router.post('/me/onboarding/submit', authenticate, async (req, res) => {
 router.put('/employees/:id/onboarding', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'Not allowed.' });
     const data = {};
     for (const k of ['experience', 'education', 'documents']) {
       if (req.body[k] !== undefined) data[k] = typeof req.body[k] === 'string' ? req.body[k] : JSON.stringify(req.body[k]);
@@ -434,7 +441,7 @@ router.put('/employees/:id/onboarding', authenticate, async (req, res) => {
 async function onboardingTransition(req, res, state, defaultNote) {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'Not allowed.' });
     const note = state === 'approved' ? null : (req.body.note || defaultNote);
     const emp = await prisma.employee.update({ where: { id: req.params.id }, data: { onboardingState: state, onboardingNote: note }, omit: { password: true } });
     await audit(actor, state === 'approved' ? 'approve' : state === 'returned' ? 'return' : 'push', 'onboarding', emp.id, note || undefined);
@@ -1667,7 +1674,7 @@ const HR_DOC_TYPES = ['offer_letter', 'relieving_letter', 'resignation_ack', 'on
 router.get('/hr-documents', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    const canManage = actor.role === 'admin' || isSupervisor(actor);
+    const canManage = canReviewOnboarding(actor);
     const where = canManage && req.query.all === '1' ? {} : { employeeId: req.user.id };
     if (canManage && req.query.employeeId) where.employeeId = String(req.query.employeeId);
     const rows = await prisma.hrDocument.findMany({ where, orderBy: { createdAt: 'desc' } });
@@ -1677,7 +1684,7 @@ router.get('/hr-documents', authenticate, async (req, res) => {
 router.post('/hr-documents', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor) && actor.role !== 'admin') return res.status(403).json({ error: 'HR/Admin access required to issue documents.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'HR/Admin access required to issue documents.' });
     const { employeeId, type, title, body } = req.body;
     if (!employeeId || !HR_DOC_TYPES.includes(type) || !title) {
       return res.status(400).json({ error: 'employeeId, type, title required.' });
