@@ -215,7 +215,7 @@ model Payroll {
   paymentDate      String
   employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  @@index([employeeId, month])
+  @@unique([employeeId, month])
   @@index([month])
 }
 
@@ -228,7 +228,7 @@ model TaxDeclaration {
   otherDeductions Float    @default(0)
   employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  @@index([employeeId])
+  @@unique([employeeId])
 }
 
 model SalaryAdvance {
