@@ -3,6 +3,7 @@ import useStore from '../store';
 import { hasCap } from '../permissions';
 import Modal from './Modal';
 import EmployeeForm from './EmployeeForm';
+import Avatar from './Avatar';
 
 function Directory() {
   const { employees, fetchEmployees, user, addEmployee, updateEmployee, updateSelf, deactivateEmployee, setManager, grantable, fetchGrantable, resetPassword, orgMe, fetchOrgMe } = useStore();
@@ -42,7 +43,7 @@ function Directory() {
     return (
       <li key={node.id} className="org-node-wrap">
         <div className="org-node glass">
-          <img src={node.avatar || 'https://via.placeholder.com/150'} alt={node.name} />
+          <Avatar src={node.avatar} name={node.name} />
           <div className="org-node-info">
             <h5>{node.name}</h5>
             <p>{node.designation}</p>
@@ -97,7 +98,7 @@ function Directory() {
                   {emp.status === 'active' ? 'Active' : emp.status === 'inactive' ? 'Inactive' : 'Draft'}
                 </span>
                 <div className="emp-card-header">
-                  <img src={emp.avatar || 'https://via.placeholder.com/150'} alt={emp.name} />
+                  <Avatar src={emp.avatar} name={emp.name} />
                   <h4>{emp.name}</h4>
                   <p>{emp.designation}</p>
                   <span className="dept-tag">{emp.department}</span>
