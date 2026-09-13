@@ -21,7 +21,7 @@ function EmployeeForm({ employee, mode, grantable, onSubmit, onCancel }) {
   const e = employee || {};
 
   const [f, setF] = useState({
-    name: e.name || '', email: e.email || '',
+    name: e.name || '', email: e.email || '', password: '',
     department: e.department || DEPARTMENTS[0], designation: e.designation || '',
     role: e.role || 'employee', status: e.status || (isCreate ? 'onboarding_draft' : 'active'),
     contact: e.contact || '', age: e.age ?? '', bloodGroup: e.bloodGroup || 'O+', doj: e.doj || '',
@@ -70,6 +70,12 @@ function EmployeeForm({ employee, mode, grantable, onSubmit, onCancel }) {
           <div className="form-group"><label>Email</label>
             <input className="form-control" type="email" value={f.email} disabled={!isCreate}
               onChange={ev => set('email', ev.target.value)} required /></div>
+          {isCreate && <div className="form-group"><label>Temporary Password</label>
+            <input className="form-control" type="password" value={f.password}
+              onChange={ev => set('password', ev.target.value)} minLength={12} required
+              autoComplete="new-password" />
+            <small>At least 12 characters; share through a secure channel.</small>
+          </div>}
           <div className="form-group"><label>Department</label>
             <select className="form-control" value={f.department} onChange={ev => set('department', ev.target.value)}>
               {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></div>
