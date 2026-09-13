@@ -23,6 +23,7 @@ import Workflows from './components/Workflows';
 import Expenses from './components/Expenses';
 import Engagement from './components/Engagement';
 import Policies from './components/Policies';
+import Avatar from './components/Avatar';
 
 const NAV = [
   { to: '/', key: 'dashboard', icon: 'dashboard', label: 'Dashboard', end: true },
@@ -293,7 +294,6 @@ function MainApp() {
 
   if (!user) return null;
 
-  const avatar = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=1e3a5f&color=fff`;
 
   return (
     <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -335,7 +335,7 @@ function MainApp() {
             <ThemeToggle />
             <NotificationBell />
             <div className="user-profile-menu">
-              <img id="current-user-avatar" src={avatar} alt="" width={36} height={36} />
+              <Avatar id="current-user-avatar" src={user.avatar} name={user.name} width={36} height={36} />
               <div className="user-info">
                 <h4 id="current-user-name">{user.name}</h4>
                 <small id="current-user-role">{user.role}</small>
