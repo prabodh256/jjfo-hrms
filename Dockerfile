@@ -18,4 +18,4 @@ RUN npx prisma generate
 ENV NODE_ENV=production
 ENV PORT=4000
 EXPOSE 4000
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && if [ \"$SEED_DEMO\" = \"1\" ]; then node seed.js; fi && node server.js"]
