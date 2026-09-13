@@ -23,6 +23,8 @@ import Workflows from './components/Workflows';
 import Expenses from './components/Expenses';
 import Engagement from './components/Engagement';
 import Policies from './components/Policies';
+import EnterpriseHub from './components/EnterpriseHub';
+import Insurance from './components/Insurance';
 import SidebarNav from './components/SidebarNav';
 import AccountMenu from './components/AccountMenu';
 
@@ -33,11 +35,13 @@ const NAV = [
   { to: '/leaves', key: 'leaves', icon: 'event_note', label: 'Leave & Attendance' },
   { to: '/payroll', key: 'payroll', icon: 'payments', label: 'Payroll & Tax' },
   { to: '/expenses', key: 'expenses', icon: 'receipt_long', label: 'Expenses' },
+  { to: '/insurance', key: 'insurance', icon: 'health_and_safety', label: 'Insurance & Benefits' },
   { to: '/engagement', key: 'engagement', icon: 'volunteer_activism', label: 'Engagement' },
   { to: '/policies', key: 'policies', icon: 'policy', label: 'Policies' },
   { to: '/assets', key: 'assets', icon: 'devices', label: 'Asset Inventory' },
   { to: '/helpdesk', key: 'helpdesk', icon: 'support_agent', label: 'HR Helpdesk' },
   { to: '/workflows', key: 'onboarding', icon: 'assignment', label: 'HR Workflows' },
+  { to: '/people-ops', key: 'peopleops', icon: 'domain_add', label: 'People Operations' },
   { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Permissions', capAlt: 'createUsers' },
   { to: '/gsync', key: 'gsync', icon: 'cloud_sync', label: 'Document Vault' },
   { to: '/reports', key: 'reports', icon: 'insights', label: 'Reports' },
@@ -321,11 +325,13 @@ function MainApp() {
               <Route path="/leaves" element={<Guard k="leaves"><Leaves /></Guard>} />
               <Route path="/payroll" element={<Guard k="payroll"><Payroll /></Guard>} />
               <Route path="/expenses" element={<Guard k="expenses"><Expenses /></Guard>} />
+              <Route path="/insurance" element={<Guard k="insurance"><Insurance /></Guard>} />
               <Route path="/engagement" element={<Guard k="engagement"><Engagement /></Guard>} />
               <Route path="/policies" element={<Guard k="policies"><Policies /></Guard>} />
               <Route path="/assets" element={<Guard k="assets"><Assets /></Guard>} />
               <Route path="/helpdesk" element={<Guard k="helpdesk"><Helpdesk /></Guard>} />
               <Route path="/workflows" element={<Workflows />} />
+              <Route path="/people-ops" element={<Guard k="peopleops"><EnterpriseHub /></Guard>} />
               <Route path="/permissions" element={<Guard k="permissions"><Permissions /></Guard>} />
               <Route path="/gsync" element={<Guard k="gsync"><GoogleSync /></Guard>} />
               <Route path="/reports" element={<Guard k="reports"><Reports /></Guard>} />
