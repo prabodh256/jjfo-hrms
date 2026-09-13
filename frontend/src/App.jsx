@@ -335,7 +335,7 @@ function MainApp() {
             <ThemeToggle />
             <NotificationBell />
             <div className="user-profile-menu">
-              <Avatar id="current-user-avatar" src={user.avatar} name={user.name} width={36} height={36} />
+              <Avatar id="current-user-avatar" name={user.name} width={40} height={40} />
               <div className="user-info">
                 <h4 id="current-user-name">{user.name}</h4>
                 <small id="current-user-role">{user.role}</small>
