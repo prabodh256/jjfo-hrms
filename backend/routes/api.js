@@ -8,7 +8,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const prisma = require('../prisma/client');
 const {
   parseJson, effectivePerms, isSubset, normalizePerms, isSupervisor,
-  redactEmployee, redactEmployees, hasModule, makeStamp
+  redactEmployee, redactEmployees, hasModule, canViewAllPayroll, makeStamp
 } = require('../lib/perms');
 const { audit, notify } = require('../lib/audit');
 const { parsePagination, paginated } = require('../lib/pagination');
@@ -18,6 +18,19 @@ const { getSetting, setSetting, getAllSettings, isOnTime } = require('../lib/set
 const router = express.Router();
 
 const LEAVE_TYPE_KEY = { 'Annual Leave': 'annual', 'Sick Leave': 'sick', 'Casual Leave': 'casual' };
+
+const helpdeskCreateSchema = z.object({
+  subject: z.string().trim().min(3).max(200),
+  category: z.string().trim().min(2).max(80),
+  description: z.string().trim().min(3).max(2000),
+  priority: z.enum(['Low', 'Medium', 'High', 'Critical']).default('Medium')
+}).strict();
+
+const helpdeskReplySchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  resolve: z.boolean().optional().default(false)
+}).strict();
+
 const safeName = (name) => (name || '').replace(/\s+/g, '');
 
 async function loadActor(req) {
@@ -1042,12 +1055,16 @@ router.delete('/assets/:id', authenticate, authorize(['admin']), async (req, res
 // Helpdesk
 router.get('/helpdesk', authenticate, async (req, res) => {
   try {
+    const actor = await loadActor(req);
+    const canModerate = actor?.role === 'admin' || effectivePerms(actor).caps.moderateHelpdesk;
     const tickets = await prisma.helpdeskTicket.findMany({
+      where: canModerate ? {} : { employeeId: actor.id },
       include: {
         employee: { select: { name: true } },
         replies: { include: { sender: { select: { name: true } } } }
       },
-      orderBy: { createdDate: 'desc' }
+      orderBy: { createdDate: 'desc' },
+      take: 200
     });
     res.json(tickets);
   } catch (error) {
@@ -1057,7 +1074,11 @@ router.get('/helpdesk', authenticate, async (req, res) => {
 
 router.post('/helpdesk', authenticate, async (req, res) => {
   try {
-    const { subject, category, description, priority } = req.body;
+    const parsed = helpdeskCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid helpdesk ticket', details: parsed.error.flatten() });
+    }
+    const { subject, category, description, priority } = parsed.data;
     const ticket = await prisma.helpdeskTicket.create({
       data: {
         employeeId: req.user.id, subject, category, description,
@@ -1073,6 +1094,11 @@ router.post('/helpdesk', authenticate, async (req, res) => {
 
 router.post('/helpdesk/:id/replies', authenticate, async (req, res) => {
   try {
+    const parsed = helpdeskReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid helpdesk reply', details: parsed.error.flatten() });
+    }
+    const { text, resolve } = parsed.data;
     const ticket = await prisma.helpdeskTicket.findUnique({ where: { id: req.params.id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     // Moderators (admin or moderateHelpdesk cap) may reply anywhere; others
@@ -1082,21 +1108,21 @@ router.post('/helpdesk/:id/replies', authenticate, async (req, res) => {
     if (!isMod && ticket.employeeId !== req.user.id) {
       return res.status(403).json({ error: 'You can only reply to your own tickets.' });
     }
-    if (req.body.resolve && !isMod) {
+    if (resolve && !isMod) {
       return res.status(403).json({ error: 'Only helpdesk moderators can resolve tickets.' });
     }
     const reply = await prisma.ticketReply.create({
       data: {
         ticketId: req.params.id, senderId: req.user.id,
-        text: req.body.text, date: new Date().toISOString().split('T')[0]
+        text, date: new Date().toISOString().split('T')[0]
       }
     });
-    if (req.body.resolve) {
+    if (resolve) {
       await prisma.helpdeskTicket.update({ where: { id: req.params.id }, data: { status: 'Resolved' } });
       await audit(actor, 'resolve', 'ticket', ticket.id, ticket.subject);
     }
     if (ticket.employeeId !== req.user.id) {
-      await notify(ticket.employeeId, req.body.resolve ? 'Ticket resolved' : 'New reply on your ticket', `"${ticket.subject}": ${String(req.body.text || '').slice(0, 120)}`, 'helpdesk');
+      await notify(ticket.employeeId, resolve ? 'Ticket resolved' : 'New reply on your ticket', `"${ticket.subject}": ${text.slice(0, 120)}`, 'helpdesk');
     }
     res.json(reply);
   } catch (error) {
@@ -1136,7 +1162,7 @@ router.delete('/helpdesk/:id', authenticate, authorize(['admin']), async (req, r
 async function requirePayrollManage(req, res) {
   const actor = await loadActor(req);
   if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return null; }
-  if (actor.role === 'admin' || hasModule(actor, 'payroll')) return actor;
+  if (canViewAllPayroll(actor)) return actor;
   res.status(403).json({ error: 'Payroll management requires payroll module access.' });
   return null;
 }
@@ -1146,7 +1172,7 @@ router.get('/payroll', authenticate, async (req, res) => {
     const actor = await loadActor(req);
     if (!actor) return res.status(401).json({ error: 'Unauthorized' });
     // All employees see own slips; admin / payroll module see all.
-    const canAll = actor.role === 'admin' || hasModule(actor, 'payroll');
+    const canAll = canViewAllPayroll(actor);
     const where = canAll ? {} : { employeeId: actor.id };
     const payroll = await prisma.payroll.findMany({
       where, include: { employee: { select: { name: true } } }, orderBy: { paymentDate: 'desc' }
@@ -1532,6 +1558,18 @@ router.get('/search', authenticate, async (req, res) => {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ employees: [], tickets: [], assets: [] });
     const actor = await loadActor(req);
+    const canModerateHelpdesk = actor?.role === 'admin' || effectivePerms(actor).caps.moderateHelpdesk;
+    const ticketSearch = {
+      AND: [
+        {
+          OR: [
+            { subject: { contains: q } },
+            { description: { contains: q } }
+          ]
+        },
+        ...(canModerateHelpdesk ? [] : [{ employeeId: actor.id }])
+      ]
+    };
     const [employees, tickets, assets] = await Promise.all([
       prisma.employee.findMany({
         where: {
@@ -1547,12 +1585,7 @@ router.get('/search', authenticate, async (req, res) => {
         select: { id: true, name: true, email: true, department: true, designation: true, role: true }
       }),
       prisma.helpdeskTicket.findMany({
-        where: {
-          OR: [
-            { subject: { contains: q } },
-            { description: { contains: q } }
-          ]
-        },
+        where: ticketSearch,
         take: 8,
         select: { id: true, subject: true, status: true, priority: true, employeeId: true }
       }),
