@@ -1234,7 +1234,7 @@ router.post('/payroll/process', authenticate, authorize(['admin']), async (req, 
     ]);
     const declMap = new Map(decls.map(d => [d.employeeId, d]));
     const existingMap = new Map(existingSlips.map(p => [p.employeeId, p]));
-    const results = [];
+    const operations = [];
     for (const emp of employees) {
       const decl = declMap.get(emp.id);
       const gross = emp.salaryBasic + emp.salaryAllow;
@@ -1251,11 +1251,12 @@ router.post('/payroll/process', authenticate, authorize(['admin']), async (req, 
         paymentDate: new Date().toISOString().split('T')[0]
       };
       const existing = existingMap.get(emp.id);
-      const slip = existing
-        ? await prisma.payroll.update({ where: { id: existing.id }, data })
-        : await prisma.payroll.create({ data });
-      results.push(slip);
+      operations.push(existing
+        ? prisma.payroll.update({ where: { id: existing.id }, data })
+        : prisma.payroll.create({ data }));
     }
+    // All payslips for a cycle succeed or fail together.
+    const results = await prisma.$transaction(operations);
     await audit(req.user, 'process', 'payroll', month, `${results.length} payslip(s)`);
     res.json(results);
   } catch (error) {
