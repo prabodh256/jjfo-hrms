@@ -446,3 +446,157 @@ model Form16 {
   @@unique([employeeId, financialYear])
   @@index([employeeId])
 }
+
+
+// Position catalogue keeps the organization structure independent of individual employees.
+model Position {
+  id                String   @id @default(cuid())
+  code              String   @unique
+  title             String
+  department        String
+  grade             String?
+  location          String?
+  costCenter        String?
+  parentPositionId  String?
+  employeeId        String?  @unique
+  approvedHeadcount Int      @default(1)
+  status            String   @default("active")
+  effectiveFrom     String?
+  effectiveTo       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([department])
+  @@index([parentPositionId])
+  @@index([status])
+}
+
+// Immutable, effective-dated timeline for employment and compensation changes.
+model EmployeeHistoryEvent {
+  id            String   @id @default(cuid())
+  employeeId    String
+  eventType     String
+  title         String
+  effectiveDate String
+  oldValue      String?
+  newValue      String?
+  documentRef   String?
+  status        String   @default("approved")
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  @@index([employeeId, effectiveDate])
+  @@index([eventType])
+}
+
+// Tracks controlled imports, validation, reconciliation, and approvals.
+model MigrationBatch {
+  id            String    @id @default(cuid())
+  name          String
+  source        String?
+  cutoffDate    String?
+  status        String    @default("draft")
+  receivedCount Int       @default(0)
+  successCount  Int       @default(0)
+  errorCount    Int       @default(0)
+  notes         String?
+  importedBy    String
+  approvedBy    String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([status])
+}
+
+model MigrationIssue {
+  id          String   @id @default(cuid())
+  batchId     String
+  rowNumber   Int?
+  employeeRef String?
+  severity    String   @default("error")
+  field       String?
+  message     String
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([batchId, resolved])
+}
+
+// Insurance configuration supports medical, life, accident, and voluntary plans.
+model InsurancePlan {
+  id                   String   @id @default(cuid())
+  name                 String
+  provider             String
+  tpa                  String?
+  broker               String?
+  policyNumber         String   @unique
+  planType             String
+  coverageAmount       Float    @default(0)
+  premiumEmployer      Float    @default(0)
+  premiumEmployee      Float    @default(0)
+  effectiveFrom        String
+  effectiveTo          String
+  eligibility          String?
+  coverageSummary      String?
+  networkUrl           String?
+  status               String   @default("active")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([status])
+  @@index([planType])
+}
+
+model InsuranceEnrollment {
+  id                String   @id @default(cuid())
+  employeeId        String
+  planId            String
+  status            String   @default("pending")
+  memberNumber      String?
+  effectiveFrom     String?
+  effectiveTo       String?
+  premiumEmployer   Float    @default(0)
+  premiumEmployee   Float    @default(0)
+  nominee           String?
+  consentAt         DateTime?
+  cardUrl           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([employeeId, planId])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model InsuranceDependent {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  name         String
+  relationship String
+  dob          String
+  status       String   @default("pending")
+  documentRef  String?
+  createdAt    DateTime @default(now())
+
+  @@index([enrollmentId])
+}
+
+model InsuranceClaim {
+  id             String   @id @default(cuid())
+  enrollmentId   String
+  employeeId     String
+  claimNumber    String?  @unique
+  claimType      String
+  treatmentDate  String?
+  hospital       String?
+  amountClaimed  Float    @default(0)
+  amountApproved Float?
+  status         String   @default("submitted")
+  providerRef    String?
+  notes          String?
+  submittedAt    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+}
