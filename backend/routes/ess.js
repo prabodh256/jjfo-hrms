@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../prisma/client');
 const { authenticate, authorize } = require('../middleware/auth');
-const { isSupervisor, effectivePerms } = require('../lib/perms');
+const { isSupervisor, effectivePerms, hasModuleEdit } = require('../lib/perms');
 const { audit, notify } = require('../lib/audit');
 const { payslipPdf, form16Pdf } = require('../lib/pdf');
 
@@ -213,7 +213,7 @@ router.get('/surveys', authenticate, async (req, res) => {
 router.post('/surveys', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (actor.role !== 'admin' && !isSupervisor(actor)) return res.status(403).json({ error: 'Admin/HR only' });
+    if (actor.role !== 'admin' && !hasModuleEdit(actor, 'engagement')) return res.status(403).json({ error: 'Engagement management access required' });
     const { title, description, questions, closesAt } = req.body;
     if (!title || !Array.isArray(questions) || !questions.length) {
       return res.status(400).json({ error: 'title and questions[] required' });
@@ -256,7 +256,7 @@ router.post('/surveys/:id/respond', authenticate, async (req, res) => {
 router.get('/surveys/:id/results', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (actor.role !== 'admin' && !isSupervisor(actor)) return res.status(403).json({ error: 'Forbidden' });
+    if (actor.role !== 'admin' && !hasModuleEdit(actor, 'engagement')) return res.status(403).json({ error: 'Engagement results access required' });
     const responses = await prisma.surveyResponse.findMany({ where: { surveyId: req.params.id } });
     res.json({ count: responses.length, responses: responses.map((r) => ({ ...r, answers: JSON.parse(r.answers || '{}') })) });
   } catch (e) {
@@ -279,7 +279,7 @@ router.get('/policies', authenticate, async (req, res) => {
 router.post('/policies', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (actor.role !== 'admin' && !isSupervisor(actor)) return res.status(403).json({ error: 'Admin/HR only' });
+    if (actor.role !== 'admin' && !hasModuleEdit(actor, 'policies')) return res.status(403).json({ error: 'Policy publishing access required' });
     const { title, category, version, body, mandatory } = req.body;
     if (!title || !body) return res.status(400).json({ error: 'title and body required' });
     const p = await prisma.policyDoc.create({
