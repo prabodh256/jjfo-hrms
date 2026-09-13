@@ -3,7 +3,7 @@ import {
   BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, Link
 } from 'react-router-dom';
 import useStore from './store';
-import { applyPreferences, parsePrefs, DEFAULT_PREFS } from './theme';
+import { applyPreferences, parsePrefs } from './theme';
 import { hasModule, hasCap } from './permissions';
 import { onToast } from './toast';
 import ErrorBoundary from './ErrorBoundary';
@@ -23,7 +23,8 @@ import Workflows from './components/Workflows';
 import Expenses from './components/Expenses';
 import Engagement from './components/Engagement';
 import Policies from './components/Policies';
-import Avatar from './components/Avatar';
+import SidebarNav from './components/SidebarNav';
+import AccountMenu from './components/AccountMenu';
 
 const NAV = [
   { to: '/', key: 'dashboard', icon: 'dashboard', label: 'Dashboard', end: true },
@@ -136,31 +137,6 @@ function NotificationBell() {
         </div>
       )}
     </div>
-  );
-}
-
-function ThemeToggle() {
-  const { user, savePreferences, refreshMe } = useStore();
-  const prefs = { ...DEFAULT_PREFS, ...parsePrefs(user?.preferences) };
-  const isDark = prefs.theme !== 'light';
-  const toggle = async () => {
-    const next = { ...prefs, theme: isDark ? 'light' : 'dark' };
-    applyPreferences(next);
-    try {
-      await savePreferences(next);
-      if (refreshMe) await refreshMe();
-    } catch { /* local theme still applied */ }
-  };
-  return (
-    <button
-      type="button"
-      className="theme-toggle-btn"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={isDark ? 'Light mode' : 'Dark mode'}
-      onClick={toggle}
-    >
-      <i className="material-icons-round">{isDark ? 'light_mode' : 'dark_mode'}</i>
-    </button>
   );
 }
 
@@ -306,45 +282,23 @@ function MainApp() {
         <i className="material-icons-round">menu</i>
       </button>
 
-      <aside className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-logo">
-          <i className="material-icons-round">account_balance</i>
-          <span>JJFO HRMS</span>
-        </div>
-        <ul className="sidebar-menu">
-          {NAV.filter((n) => canSee(user, n)).map((n) => (
-            <li className="menu-item" key={n.to}>
-              <NavLink
-                to={n.to}
-                end={n.end}
-                className={({ isActive }) => `menu-link${isActive ? ' active' : ''}`}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <i className="material-icons-round">{n.icon}</i>
-                <span>{n.label}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <SidebarNav
+        items={NAV.filter((item) => canSee(user, item))}
+        user={user}
+        onNavigate={() => setSidebarOpen(false)}
+      />
+      {sidebarOpen && (
+        <button type="button" className="sidebar-backdrop" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
+      )}
 
       <main className="main-content">
         <header className="topbar glass">
           <GlobalSearch />
           <div className="topbar-actions">
-            <ThemeToggle />
             <NotificationBell />
-            <div className="user-profile-menu">
-              <Avatar id="current-user-avatar" name={user.name} width={40} height={40} />
-              <div className="user-info">
-                <h4 id="current-user-name">{user.name}</h4>
-                <small id="current-user-role">{user.role}</small>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
+            <AccountMenu
+              user={user}
+              onLogout={() => {
                 fetch('/auth/logout', {
                   method: 'POST',
                   credentials: 'include',
@@ -354,9 +308,7 @@ function MainApp() {
                   navigate('/login');
                 });
               }}
-            >
-              Logout
-            </button>
+            />
           </div>
         </header>
 
