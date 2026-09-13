@@ -350,9 +350,13 @@ function Login() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [forgotMsg, setForgotMsg] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    fetch('/health').then((res) => res.json()).then((data) => setIsDemo(Boolean(data.demo))).catch(() => {});
+  }, []);
+
+  const loginWith = async (loginEmail = email, loginPassword = password) => {
     setBusy(true);
     setError('');
     try {
@@ -360,7 +364,7 @@ function Login() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
       });
       const data = await res.json();
       if (res.ok) {
@@ -374,6 +378,11 @@ function Login() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    loginWith();
   };
 
   const handleForgot = async (e) => {
@@ -405,6 +414,23 @@ function Login() {
         </div>
         {error && <div className="login-error" role="alert">{error}</div>}
         {forgotMsg && <div className="login-info" role="status">{forgotMsg}</div>}
+
+        {isDemo && !forgot && (
+          <div className="demo-portals" aria-label="Demo portal choices">
+            <p>Choose a demo experience</p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => loginWith('rajesh@jjfo.com', 'password123')}>
+                <i className="material-icons-round">admin_panel_settings</i>
+                <span><strong>Admin portal</strong><small>Manage people and operations</small></span>
+              </button>
+              <button type="button" disabled={busy} onClick={() => loginWith('amit@jjfo.com', 'password123')}>
+                <i className="material-icons-round">badge</i>
+                <span><strong>Employee portal</strong><small>Self-service employee view</small></span>
+              </button>
+            </div>
+            <span className="demo-divider">or sign in manually</span>
+          </div>
+        )}
 
         {forgot ? (
           <form onSubmit={handleForgot}>
