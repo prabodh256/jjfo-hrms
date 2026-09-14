@@ -4,10 +4,10 @@ import { NavLink, useLocation } from 'react-router-dom';
 const GROUPS = [
   { id: 'home', label: 'Home', icon: 'home', paths: ['/'] },
   { id: 'people', label: 'People', icon: 'groups', paths: ['/directory', '/onboarding', '/engagement'] },
-  { id: 'work', label: 'Work & Pay', icon: 'work', paths: ['/leaves', '/payroll', '/expenses'] },
+  { id: 'work', label: 'Work & Pay', icon: 'work', paths: ['/leaves', '/payroll', '/expenses', '/insurance'] },
   { id: 'resources', label: 'Resources', icon: 'folder', paths: ['/policies', '/assets', '/gsync'] },
   { id: 'support', label: 'Support', icon: 'support_agent', paths: ['/helpdesk', '/workflows'] },
-  { id: 'admin', label: 'Administration', icon: 'admin_panel_settings', paths: ['/permissions', '/reports', '/audit', '/settings'], adminOnly: true }
+  { id: 'admin', label: 'Administration', icon: 'admin_panel_settings', paths: ['/people-ops', '/permissions', '/reports', '/audit', '/settings'], adminOnly: true }
 ];
 
 const readStored = (key, fallback) => {
