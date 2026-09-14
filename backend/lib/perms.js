@@ -10,7 +10,7 @@ const ALL_CAPS = [
 ];
 // Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
 const BASE_MODULES = [
-  'dashboard', 'leaves', 'helpdesk', 'settings',
+  'dashboard', 'directory', 'leaves', 'helpdesk', 'settings',
   'expenses', 'engagement', 'policies', 'insurance'
 ];
 const LEVEL_RANK = { view: 1, edit: 2 };
