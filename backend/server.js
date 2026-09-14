@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Load .env before any module that reads JWT_SECRET at import time.
 try {
@@ -27,15 +28,21 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const apiRoutes = require('./routes/api');
 const essRoutes = require('./routes/ess');
+const enterpriseRoutes = require('./routes/enterprise');
 const { requireCsrfHeader } = require('./middleware/auth');
 const prisma = require('./prisma/client');
 const { purgeExpiredSessions } = require('./lib/sessions');
+const { ensureBootstrapAdmin } = require('./lib/bootstrap-admin');
 
 const app = express();
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const PORT = Number(process.env.PORT) || 4000;
 const isProd = process.env.NODE_ENV === 'production';
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+  app.set('trust proxy', trustProxyHops);
+}
 
 app.use(helmet({
   contentSecurityPolicy: isProd ? undefined : false,
@@ -49,7 +56,7 @@ app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 
 app.use((req, res, next) => {
-  req.requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  req.requestId = crypto.randomUUID();
   res.setHeader('X-Request-Id', req.requestId);
   next();
 });
@@ -62,7 +69,7 @@ app.use(rateLimit({
 }));
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), ts: new Date().toISOString() });
+  res.json({ status: 'ok', demo: process.env.SEED_DEMO === '1', uptime: process.uptime(), ts: new Date().toISOString() });
 });
 
 app.get('/ready', async (_req, res) => {
@@ -77,6 +84,24 @@ app.get('/ready', async (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/api', requireCsrfHeader, apiRoutes);
 app.use('/api', requireCsrfHeader, essRoutes);
+app.use('/api/enterprise', requireCsrfHeader, enterpriseRoutes);
+
+// The production image includes the built SPA. Keep API routes above this
+// fallback so unknown API requests never receive index.html.
+const publicDir = path.join(__dirname, 'public');
+if (isProd && fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir, { index: false, maxAge: '1h' }));
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && req.accepts('html')) {
+      return res.sendFile(path.join(publicDir, 'index.html'));
+    }
+    next();
+  });
+}
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not Found', requestId: req.requestId });
+});
 
 app.use((err, req, res, _next) => {
   console.error(`[${req.requestId || '-'}]`, err.stack || err);
@@ -86,7 +111,34 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal Server Error', requestId: req.requestId });
 });
 
-app.listen(PORT, () => {
-  console.log(`JJFO HRMS API listening on port ${PORT} (origin ${CLIENT_ORIGIN})`);
-  setInterval(() => { purgeExpiredSessions(); }, 60 * 60 * 1000).unref?.();
+let server;
+
+async function start() {
+  const bootstrap = await ensureBootstrapAdmin();
+  if (bootstrap.created) console.log(`Created one-time bootstrap administrator (${bootstrap.id}).`);
+  server = app.listen(PORT, () => {
+    console.log(`JJFO HRMS API listening on port ${PORT} (origin ${CLIENT_ORIGIN})`);
+    setInterval(() => { purgeExpiredSessions(); }, 60 * 60 * 1000).unref?.();
+  });
+}
+
+start().catch((error) => {
+  console.error(`FATAL ERROR: ${error.message}`);
+  process.exit(1);
 });
+
+async function shutdown(signal) {
+  console.log(`${signal} received; shutting down gracefully`);
+  if (!server) {
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+  server.close(async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10000).unref?.();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

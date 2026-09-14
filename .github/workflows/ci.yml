@@ -20,7 +20,10 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - run: cp .env.example .env
       - run: npx prisma generate
+      - name: Syntax check
+        run: node --check server.js && node --check routes/api.js && node --check routes/auth.js && node --check routes/ess.js
       - run: npx prisma db push
         env:
           DATABASE_URL: file:./dev.db
@@ -42,6 +45,7 @@ jobs:
           CLIENT_ORIGIN: http://localhost:5173
           DATABASE_URL: file:./dev.db
           NODE_ENV: development
+          ALLOW_HARD_DELETE: 1
       - run: npm run test:smoke
         env:
           SMOKE_BASE: http://localhost:4000
@@ -61,4 +65,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build

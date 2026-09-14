@@ -14,18 +14,19 @@ const DOC_TYPES = [
 
 function parse(raw, fallback) { try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 
-// mode: 'create' | 'edit' (admin/delegated) | 'self'
-function EmployeeForm({ employee, mode, grantable, onSubmit, onCancel }) {
+// mode: 'create' | 'edit' (admin) | 'self'
+function EmployeeForm({ employee, mode, grantable, managerOptions = [], onSubmit, onCancel }) {
   const isSelf = mode === 'self';
   const isCreate = mode === 'create';
   const e = employee || {};
 
   const [f, setF] = useState({
-    name: e.name || '', email: e.email || '',
+    name: e.name || '', email: e.email || '', password: '',
     department: e.department || DEPARTMENTS[0], designation: e.designation || '',
     role: e.role || 'employee', status: e.status || (isCreate ? 'onboarding_draft' : 'active'),
     contact: e.contact || '', age: e.age ?? '', bloodGroup: e.bloodGroup || 'O+', doj: e.doj || '',
-    salaryBasic: e.salaryBasic ?? '', salaryAllow: e.salaryAllow ?? '', salaryDeduct: e.salaryDeduct ?? ''
+    salaryBasic: e.salaryBasic ?? '', salaryAllow: e.salaryAllow ?? '', salaryDeduct: e.salaryDeduct ?? '',
+    managerId: e.managerId || ''
   });
   const [experiences, setExperiences] = useState(() => parse(e.experience, []) || []);
   const [documents, setDocuments] = useState(() => parse(e.documents, {}) || {});
@@ -52,7 +53,7 @@ function EmployeeForm({ employee, mode, grantable, onSubmit, onCancel }) {
         payload = { contact: f.contact, age: f.age, bloodGroup: f.bloodGroup, designation: f.designation, experience: cleanExp, documents };
       } else {
         payload = { ...f, experience: cleanExp, documents };
-        if (grantable) payload.permissions = perm; // delegated grant (subset enforced server-side)
+        if (grantable) payload.permissions = perm;
         if (!isCreate) delete payload.email; // email is the immutable key
       }
       await onSubmit(payload);
@@ -70,12 +71,27 @@ function EmployeeForm({ employee, mode, grantable, onSubmit, onCancel }) {
           <div className="form-group"><label>Email</label>
             <input className="form-control" type="email" value={f.email} disabled={!isCreate}
               onChange={ev => set('email', ev.target.value)} required /></div>
+          {isCreate && <div className="form-group"><label>Temporary Password</label>
+            <input className="form-control" type="password" value={f.password}
+              onChange={ev => set('password', ev.target.value)} minLength={12} required
+              autoComplete="new-password" />
+            <small>At least 12 characters; share through a secure channel.</small>
+          </div>}
           <div className="form-group"><label>Department</label>
             <select className="form-control" value={f.department} onChange={ev => set('department', ev.target.value)}>
               {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></div>
           <div className="form-group"><label>Role</label>
             <select className="form-control" value={f.role} onChange={ev => set('role', ev.target.value)}>
               {ROLES.map(r => <option key={r}>{r}</option>)}</select></div>
+          {isCreate && f.role !== 'admin' && <div className="form-group"><label>Reporting Manager</label>
+            <select className="form-control" value={f.managerId} onChange={ev => set('managerId', ev.target.value)} required>
+              <option value="">Select an active manager</option>
+              {managerOptions.filter(m => m.id !== e.id && m.status === 'active').map(m => (
+                <option key={m.id} value={m.id}>{m.name} — {m.designation}</option>
+              ))}
+            </select>
+            <small>Required. Only an administrator can change this assignment.</small>
+          </div>}
           <div className="form-group"><label>Status</label>
             <select className="form-control" value={f.status} onChange={ev => set('status', ev.target.value)}>
               {STATUSES.map(s => <option key={s}>{s}</option>)}</select></div>

@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, Link
+  BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link
 } from 'react-router-dom';
 import useStore from './store';
-import { applyPreferences, parsePrefs, DEFAULT_PREFS } from './theme';
+import { applyPreferences, parsePrefs } from './theme';
 import { hasModule, hasCap } from './permissions';
 import { onToast } from './toast';
 import ErrorBoundary from './ErrorBoundary';
@@ -23,6 +23,10 @@ import Workflows from './components/Workflows';
 import Expenses from './components/Expenses';
 import Engagement from './components/Engagement';
 import Policies from './components/Policies';
+import EnterpriseHub from './components/EnterpriseHub';
+import Insurance from './components/Insurance';
+import SidebarNav from './components/SidebarNav';
+import AccountMenu from './components/AccountMenu';
 
 const NAV = [
   { to: '/', key: 'dashboard', icon: 'dashboard', label: 'Dashboard', end: true },
@@ -31,12 +35,14 @@ const NAV = [
   { to: '/leaves', key: 'leaves', icon: 'event_note', label: 'Leave & Attendance' },
   { to: '/payroll', key: 'payroll', icon: 'payments', label: 'Payroll & Tax' },
   { to: '/expenses', key: 'expenses', icon: 'receipt_long', label: 'Expenses' },
+  { to: '/insurance', key: 'insurance', icon: 'health_and_safety', label: 'Insurance & Benefits' },
   { to: '/engagement', key: 'engagement', icon: 'volunteer_activism', label: 'Engagement' },
   { to: '/policies', key: 'policies', icon: 'policy', label: 'Policies' },
   { to: '/assets', key: 'assets', icon: 'devices', label: 'Asset Inventory' },
   { to: '/helpdesk', key: 'helpdesk', icon: 'support_agent', label: 'HR Helpdesk' },
   { to: '/workflows', key: 'onboarding', icon: 'assignment', label: 'HR Workflows' },
-  { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Permissions', capAlt: 'createUsers' },
+  { to: '/people-ops', key: 'peopleops', icon: 'domain_add', label: 'People Operations' },
+  { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Admin Controls' },
   { to: '/gsync', key: 'gsync', icon: 'cloud_sync', label: 'Document Vault' },
   { to: '/reports', key: 'reports', icon: 'insights', label: 'Reports' },
   { to: '/audit', key: 'audit', icon: 'fact_check', label: 'Audit Log' },
@@ -44,9 +50,11 @@ const NAV = [
 ];
 
 const canSee = (user, item) =>
+  (item.key === 'permissions' ? user?.role === 'admin' :
+  item.key === 'payroll' || // every employee may access their own payslips
   hasModule(user, item.key) ||
   (item.capAlt && hasCap(user, item.capAlt)) ||
-  (item.key === 'onboarding' && user.onboardingState && user.onboardingState !== 'approved');
+  (item.key === 'onboarding' && user.onboardingState && user.onboardingState !== 'approved'));
 
 function Guard({ k, children }) {
   const { user } = useStore();
@@ -134,31 +142,6 @@ function NotificationBell() {
         </div>
       )}
     </div>
-  );
-}
-
-function ThemeToggle() {
-  const { user, savePreferences, refreshMe } = useStore();
-  const prefs = { ...DEFAULT_PREFS, ...parsePrefs(user?.preferences) };
-  const isDark = prefs.theme !== 'light';
-  const toggle = async () => {
-    const next = { ...prefs, theme: isDark ? 'light' : 'dark' };
-    applyPreferences(next);
-    try {
-      await savePreferences(next);
-      if (refreshMe) await refreshMe();
-    } catch { /* local theme still applied */ }
-  };
-  return (
-    <button
-      type="button"
-      className="theme-toggle-btn"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={isDark ? 'Light mode' : 'Dark mode'}
-      onClick={toggle}
-    >
-      <i className="material-icons-round">{isDark ? 'light_mode' : 'dark_mode'}</i>
-    </button>
   );
 }
 
@@ -292,7 +275,6 @@ function MainApp() {
 
   if (!user) return null;
 
-  const avatar = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=1e3a5f&color=fff`;
 
   return (
     <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -305,45 +287,23 @@ function MainApp() {
         <i className="material-icons-round">menu</i>
       </button>
 
-      <aside className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-logo">
-          <i className="material-icons-round">account_balance</i>
-          <span>JJFO HRMS</span>
-        </div>
-        <ul className="sidebar-menu">
-          {NAV.filter((n) => canSee(user, n)).map((n) => (
-            <li className="menu-item" key={n.to}>
-              <NavLink
-                to={n.to}
-                end={n.end}
-                className={({ isActive }) => `menu-link${isActive ? ' active' : ''}`}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <i className="material-icons-round">{n.icon}</i>
-                <span>{n.label}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <SidebarNav
+        items={NAV.filter((item) => canSee(user, item))}
+        user={user}
+        onNavigate={() => setSidebarOpen(false)}
+      />
+      {sidebarOpen && (
+        <button type="button" className="sidebar-backdrop" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
+      )}
 
       <main className="main-content">
         <header className="topbar glass">
           <GlobalSearch />
           <div className="topbar-actions">
-            <ThemeToggle />
             <NotificationBell />
-            <div className="user-profile-menu">
-              <img id="current-user-avatar" src={avatar} alt="" width={36} height={36} />
-              <div className="user-info">
-                <h4 id="current-user-name">{user.name}</h4>
-                <small id="current-user-role">{user.role}</small>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
+            <AccountMenu
+              user={user}
+              onLogout={() => {
                 fetch('/auth/logout', {
                   method: 'POST',
                   credentials: 'include',
@@ -353,9 +313,7 @@ function MainApp() {
                   navigate('/login');
                 });
               }}
-            >
-              Logout
-            </button>
+            />
           </div>
         </header>
 
@@ -368,11 +326,13 @@ function MainApp() {
               <Route path="/leaves" element={<Guard k="leaves"><Leaves /></Guard>} />
               <Route path="/payroll" element={<Guard k="payroll"><Payroll /></Guard>} />
               <Route path="/expenses" element={<Guard k="expenses"><Expenses /></Guard>} />
+              <Route path="/insurance" element={<Guard k="insurance"><Insurance /></Guard>} />
               <Route path="/engagement" element={<Guard k="engagement"><Engagement /></Guard>} />
               <Route path="/policies" element={<Guard k="policies"><Policies /></Guard>} />
               <Route path="/assets" element={<Guard k="assets"><Assets /></Guard>} />
               <Route path="/helpdesk" element={<Guard k="helpdesk"><Helpdesk /></Guard>} />
               <Route path="/workflows" element={<Workflows />} />
+              <Route path="/people-ops" element={<Guard k="peopleops"><EnterpriseHub /></Guard>} />
               <Route path="/permissions" element={<Guard k="permissions"><Permissions /></Guard>} />
               <Route path="/gsync" element={<Guard k="gsync"><GoogleSync /></Guard>} />
               <Route path="/reports" element={<Guard k="reports"><Reports /></Guard>} />
@@ -397,9 +357,13 @@ function Login() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [forgotMsg, setForgotMsg] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    fetch('/health').then((res) => res.json()).then((data) => setIsDemo(Boolean(data.demo))).catch(() => {});
+  }, []);
+
+  const loginWith = async (loginEmail = email, loginPassword = password) => {
     setBusy(true);
     setError('');
     try {
@@ -407,7 +371,7 @@ function Login() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
       });
       const data = await res.json();
       if (res.ok) {
@@ -421,6 +385,11 @@ function Login() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    loginWith();
   };
 
   const handleForgot = async (e) => {
@@ -453,10 +422,27 @@ function Login() {
         {error && <div className="login-error" role="alert">{error}</div>}
         {forgotMsg && <div className="login-info" role="status">{forgotMsg}</div>}
 
+        {isDemo && !forgot && (
+          <div className="demo-portals" aria-label="Demo portal choices">
+            <p>Choose a demo experience</p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => loginWith('rajesh@jjfo.com', 'password123')}>
+                <i className="material-icons-round">admin_panel_settings</i>
+                <span><strong>Admin portal</strong><small>Manage people and operations</small></span>
+              </button>
+              <button type="button" disabled={busy} onClick={() => loginWith('amit@jjfo.com', 'password123')}>
+                <i className="material-icons-round">badge</i>
+                <span><strong>Employee portal</strong><small>Self-service employee view</small></span>
+              </button>
+            </div>
+            <span className="demo-divider">or sign in manually</span>
+          </div>
+        )}
+
         {forgot ? (
           <form onSubmit={handleForgot}>
             <p style={{ fontSize: '0.85rem', opacity: 0.85, marginBottom: '1rem' }}>
-              Enter your work email. An administrator will be notified to reset your password (default demo password remains <code>password123</code> for new accounts).
+              Enter your work email. An administrator will be notified to reset your password securely.
             </p>
             <div className="form-group">
               <label htmlFor="forgot-email">Employee Email</label>

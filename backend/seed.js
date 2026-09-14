@@ -84,8 +84,8 @@ async function main() {
       experience: JSON.stringify([{ company: 'Tata Family Trust', designation: 'GM Operations', duration: '6 Years' }]),
       documents: JSON.stringify({ relievingLetter: 'EMP001_RelievingLetter.pdf', idProof: 'EMP001_IDProof.pdf' }),
       managerId: null,
-      preferences: JSON.stringify({ font: 'Outfit', theme: 'indigo', density: 'comfortable' }),
-      permissions: JSON.stringify({ accessFinancials: true, manageHierarchy: true, moderateHelpdesk: true })
+      preferences: JSON.stringify({ font: 'Outfit', theme: 'light', density: 'comfortable' }),
+      permissions: JSON.stringify({ accessFinancials: true, moderateHelpdesk: true })
     },
     {
       id: 'EMP002', name: 'Priya Sharma', role: 'employee', status: 'active',
@@ -97,10 +97,9 @@ async function main() {
       experience: JSON.stringify([{ company: 'Kotak Wealth', designation: 'Investment Analyst', duration: '4 Years' }]),
       documents: JSON.stringify({ relievingLetter: 'EMP002_RelievingLetter.pdf' }),
       managerId: 'EMP001',
-      preferences: JSON.stringify({ font: 'Inter', theme: 'dark', fontSize: 'medium' }),
-      // Team lead: can create reports (subset) and approve leaves at level 1.
-      // No payroll by default — admin must grant payroll module explicitly.
-      permissions: JSON.stringify({ modules: { directory: 'edit', onboarding: 'edit' }, caps: { createUsers: true, approveLeaves: true, accessFinancials: true } })
+      preferences: JSON.stringify({ font: 'Inter', theme: 'light', fontSize: 'medium' }),
+      // Team lead: may approve leave, but account creation remains admin-only.
+      permissions: JSON.stringify({ modules: { directory: 'edit', onboarding: 'view' }, caps: { approveLeaves: true, accessFinancials: true } })
     },
     {
       id: 'EMP003', name: 'Amit Patel', role: 'employee', status: 'active',
@@ -112,7 +111,7 @@ async function main() {
       experience: JSON.stringify([{ company: 'Infosys', designation: 'SysAdmin', duration: '7 Years' }]),
       documents: JSON.stringify({ idProof: 'EMP003_IDProof.pdf' }),
       managerId: 'EMP001',
-      preferences: JSON.stringify({ font: 'Roboto', theme: 'dark', fontSize: 'medium' }),
+      preferences: JSON.stringify({ font: 'Roboto', theme: 'light', fontSize: 'medium' }),
       permissions: JSON.stringify({ modules: { assets: 'edit' }, caps: { approveLeaves: true, moderateHelpdesk: true } })
     },
     {
@@ -125,8 +124,8 @@ async function main() {
       experience: JSON.stringify([{ company: 'AZB & Partners', designation: 'Associate', duration: '3 Years' }]),
       documents: JSON.stringify({}),
       managerId: 'EMP002',
-      preferences: JSON.stringify({ font: 'Outfit', theme: 'violet', density: 'comfortable' }),
-      permissions: JSON.stringify({ accessFinancials: false, manageHierarchy: false, moderateHelpdesk: false })
+      preferences: JSON.stringify({ font: 'Outfit', theme: 'light', density: 'comfortable' }),
+      permissions: JSON.stringify({ accessFinancials: false, moderateHelpdesk: false })
     },
     {
       id: 'EMP005', name: 'Vikram Singh', role: 'candidate', status: 'onboarding_draft',
@@ -138,7 +137,7 @@ async function main() {
       experience: JSON.stringify([]), education: JSON.stringify([]), documents: JSON.stringify({}),
       managerId: 'EMP001', onboardingState: 'draft',
       onboardingNote: 'Please complete your onboarding details and upload the required documents.',
-      preferences: JSON.stringify({}), permissions: JSON.stringify({})
+      preferences: JSON.stringify({ theme: 'light', font: 'Outfit', fontSize: 'medium' }), permissions: JSON.stringify({})
     }
   ];
   for (const emp of employees) await prisma.employee.create({ data: emp });

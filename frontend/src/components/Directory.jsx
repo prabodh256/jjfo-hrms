@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 import Modal from './Modal';
 import EmployeeForm from './EmployeeForm';
+import Avatar from './Avatar';
+import { apiGet } from '../api';
 
 function Directory() {
   const { employees, fetchEmployees, user, addEmployee, updateEmployee, updateSelf, deactivateEmployee, setManager, grantable, fetchGrantable, resetPassword, orgMe, fetchOrgMe } = useStore();
@@ -10,12 +11,14 @@ function Directory() {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [modal, setModal] = useState(null); // { mode, employee }
+  const [timeline, setTimeline] = useState([]);
 
   useEffect(() => { fetchEmployees(showInactive); fetchGrantable(); fetchOrgMe(); }, [fetchEmployees, fetchGrantable, fetchOrgMe, showInactive]);
+  useEffect(() => { if (tab === 'timeline' && user?.id) apiGet(`/api/enterprise/history/${user.id}`).then((data) => setTimeline(data.events || [])).catch(() => setTimeline([])); }, [tab, user?.id]);
 
   const isAdmin = user?.role === 'admin';
-  const canCreate = hasCap(user, 'createUsers');
-  const canHierarchy = isAdmin || hasCap(user, 'manageHierarchy');
+  const canCreate = isAdmin;
+  const canHierarchy = isAdmin;
   const q = query.trim().toLowerCase();
   const filtered = employees.filter(e =>
     !q || [e.name, e.email, e.department, e.designation].some(v => (v || '').toLowerCase().includes(q))
@@ -42,7 +45,7 @@ function Directory() {
     return (
       <li key={node.id} className="org-node-wrap">
         <div className="org-node glass">
-          <img src={node.avatar || 'https://via.placeholder.com/150'} alt={node.name} />
+          <Avatar src={node.avatar} name={node.name} />
           <div className="org-node-info">
             <h5>{node.name}</h5>
             <p>{node.designation}</p>
@@ -73,6 +76,7 @@ function Directory() {
           <button type="button" className={`tab-btn ${tab === 'grid' ? 'active' : ''}`} onClick={() => setTab('grid')}>Directory Grid</button>
           <button type="button" className={`tab-btn ${tab === 'org' ? 'active' : ''}`} onClick={() => setTab('org')}>Full Org</button>
           <button type="button" className={`tab-btn ${tab === 'myorg' ? 'active' : ''}`} onClick={() => setTab('myorg')}>My hierarchy</button>
+          <button type="button" className={`tab-btn ${tab === 'timeline' ? 'active' : ''}`} onClick={() => setTab('timeline')}>My employment history</button>
         </div>
         <div className="action-btn-group">
           {isAdmin && (
@@ -97,7 +101,7 @@ function Directory() {
                   {emp.status === 'active' ? 'Active' : emp.status === 'inactive' ? 'Inactive' : 'Draft'}
                 </span>
                 <div className="emp-card-header">
-                  <img src={emp.avatar || 'https://via.placeholder.com/150'} alt={emp.name} />
+                  <Avatar src={emp.avatar} name={emp.name} />
                   <h4>{emp.name}</h4>
                   <p>{emp.designation}</p>
                   <span className="dept-tag">{emp.department}</span>
@@ -132,6 +136,9 @@ function Directory() {
               </div>
             ))}
           </div>
+        )}
+        {tab === 'timeline' && (
+          <div className="glass p-6 employment-timeline"><h3>Employment timeline</h3><p className="text-muted">Joining, promotions, transfers, manager changes, salary revisions, and other effective-dated events.</p>{timeline.length ? timeline.map((event, index) => <div className="timeline-event" key={event.id}><span className="timeline-dot" /><div><small>{event.effectiveDate} · {event.eventType.replaceAll('_', ' ')}</small><h4>{event.title}</h4>{event.documentRef && <span className="doc-name"><i className="material-icons-round">description</i>{event.documentRef}</span>}</div>{index === 0 && <span className="status-badge badge-success">Latest</span>}</div>) : <p className="empty-state">No historical employment events have been recorded yet.</p>}</div>
         )}
         {tab === 'org' && (
           <div className="org-tree-container"><ul className="org-tree">{roots.map(r => buildTree(r.id))}</ul></div>
@@ -187,7 +194,7 @@ function Directory() {
               </select>
             </div>
           )}
-          <EmployeeForm employee={modal.employee} mode={modal.mode} grantable={modal.mode !== 'self' ? grantable : null} onSubmit={submit} onCancel={() => setModal(null)} />
+          <EmployeeForm employee={modal.employee} mode={modal.mode} grantable={modal.mode !== 'self' ? grantable : null} managerOptions={employees} onSubmit={submit} onCancel={() => setModal(null)} />
         </Modal>
       )}
     </div>

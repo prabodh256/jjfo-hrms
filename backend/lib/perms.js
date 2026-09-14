@@ -3,15 +3,15 @@
 const ALL_MODULES = [
   'dashboard', 'directory', 'onboarding', 'leaves', 'payroll', 'assets',
   'helpdesk', 'permissions', 'gsync', 'settings', 'audit', 'reports',
-  'expenses', 'engagement', 'policies'
+  'expenses', 'engagement', 'policies', 'insurance', 'peopleops'
 ];
 const ALL_CAPS = [
-  'createUsers', 'approveLeaves', 'accessFinancials', 'manageHierarchy', 'moderateHelpdesk'
+  'approveLeaves', 'accessFinancials', 'moderateHelpdesk'
 ];
 // Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
 const BASE_MODULES = [
-  'dashboard', 'leaves', 'helpdesk', 'settings', 'payroll',
-  'expenses', 'engagement', 'policies'
+  'dashboard', 'directory', 'leaves', 'helpdesk', 'settings',
+  'expenses', 'engagement', 'policies', 'insurance'
 ];
 const LEVEL_RANK = { view: 1, edit: 2 };
 
@@ -66,7 +66,6 @@ function effectivePerms(emp) {
   for (const [k, lvl] of Object.entries(stored)) moduleLevels[k] = lvl;
   const caps = (p.caps && typeof p.caps === 'object') ? { ...p.caps } : {
     accessFinancials: !!p.accessFinancials,
-    manageHierarchy: !!p.manageHierarchy,
     moderateHelpdesk: !!p.moderateHelpdesk
   };
   for (const c of ALL_CAPS) caps[c] = !!caps[c];
@@ -83,6 +82,16 @@ function hasModule(emp, key) {
 
 function hasModuleEdit(emp, key) {
   return effectivePerms(emp).moduleLevels[key] === 'edit';
+}
+
+// Payroll self-service (viewing one's own records) is handled by resource
+// ownership checks. Company-wide payroll access must be explicitly granted.
+function canViewAllPayroll(emp) {
+  return !!emp && (
+    emp.role === 'admin' ||
+    effectivePerms(emp).caps.accessFinancials ||
+    hasModule(emp, 'payroll')
+  );
 }
 
 function levelOk(grantedLevel, granterLevel) {
@@ -108,7 +117,7 @@ function isSubset(granted, granter) {
 }
 
 const isSupervisor = (actor) =>
-  !!actor && (actor.role === 'admin' || effectivePerms(actor).caps.createUsers);
+  !!actor && actor.role === 'admin';
 
 function redactEmployee(emp, viewer) {
   if (!emp) return emp;
@@ -117,8 +126,7 @@ function redactEmployee(emp, viewer) {
   const canSeePay =
     viewer?.role === 'admin' ||
     viewer?.id === emp.id ||
-    effectivePerms(viewer).caps.accessFinancials ||
-    hasModule(viewer, 'payroll');
+    effectivePerms(viewer).caps.accessFinancials;
   if (!canSeePay) {
     delete out.salaryBasic;
     delete out.salaryAllow;
@@ -147,6 +155,7 @@ module.exports = {
   effectivePerms,
   hasModule,
   hasModuleEdit,
+  canViewAllPayroll,
   isSubset,
   isSupervisor,
   redactEmployee,

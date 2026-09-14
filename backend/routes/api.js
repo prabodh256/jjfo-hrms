@@ -7,8 +7,8 @@ const crypto = require('crypto');
 const { authenticate, authorize } = require('../middleware/auth');
 const prisma = require('../prisma/client');
 const {
-  parseJson, effectivePerms, isSubset, normalizePerms, isSupervisor,
-  redactEmployee, redactEmployees, hasModule, makeStamp
+  parseJson, effectivePerms, normalizePerms, isSupervisor,
+  redactEmployee, redactEmployees, hasModule, canViewAllPayroll, makeStamp
 } = require('../lib/perms');
 const { audit, notify } = require('../lib/audit');
 const { parsePagination, paginated } = require('../lib/pagination');
@@ -18,14 +18,44 @@ const { getSetting, setSetting, getAllSettings, isOnTime } = require('../lib/set
 const router = express.Router();
 
 const LEAVE_TYPE_KEY = { 'Annual Leave': 'annual', 'Sick Leave': 'sick', 'Casual Leave': 'casual' };
+
+const helpdeskCreateSchema = z.object({
+  subject: z.string().trim().min(3).max(200),
+  category: z.string().trim().min(2).max(80),
+  description: z.string().trim().min(3).max(2000),
+  priority: z.enum(['Low', 'Medium', 'High', 'Critical']).default('Medium')
+}).strict();
+
+const helpdeskReplySchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  resolve: z.boolean().optional().default(false)
+}).strict();
+
+const EMPLOYEE_WRITE_FIELDS = new Set([
+  'email', 'name', 'role', 'status', 'department', 'designation', 'avatar',
+  'doj', 'dob', 'age', 'bloodGroup', 'contact', 'salaryBasic', 'salaryAllow',
+  'salaryDeduct', 'experience', 'education', 'documents', 'managerId',
+  'preferences', 'permissions', 'onboardingState', 'onboardingNote', 'password'
+]);
+
+function pickEmployeeInput(input) {
+  return Object.fromEntries(
+    Object.entries(input || {}).filter(([key]) => EMPLOYEE_WRITE_FIELDS.has(key))
+  );
+}
+
 const safeName = (name) => (name || '').replace(/\s+/g, '');
 
 async function loadActor(req) {
   return prisma.employee.findUnique({ where: { id: req.user.id } });
 }
 
+function canReviewOnboarding(actor) {
+  return !!actor && actor.role === 'admin';
+}
+
 // ---- Real document storage (backend/uploads/<empId>/<docKey>.<ext>) ----
-const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
+const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(__dirname, '..', 'uploads');
 const DOC_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_-]{1,40}$/;
 const EMP_ID_RE = /^EMP\d{3,}$/;
 const FILE_EXTS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx']);
@@ -70,7 +100,7 @@ function fileAccess(forUpload) {
       if (!EMP_ID_RE.test(empId) || !DOC_KEY_RE.test(docKey)) return res.status(400).json({ error: 'Invalid file reference.' });
       const actor = await loadActor(req);
       if (!actor) return res.status(401).json({ error: 'Account no longer exists.' });
-      if (isSupervisor(actor)) return next();
+      if (canReviewOnboarding(actor)) return next();
       if (actor.id !== empId) return res.status(403).json({ error: 'Not allowed.' });
       if (forUpload && !ONBOARDING_EDITABLE.has(actor.onboardingState)) {
         return res.status(403).json({ error: 'Your onboarding is locked.' });
@@ -82,7 +112,7 @@ function fileAccess(forUpload) {
 
 async function notifySupervisors(title, body, kind) {
   const emps = await prisma.employee.findMany({ where: { status: 'active' } });
-  for (const e of emps) if (isSupervisor(e)) await notify(e.id, title, body, kind);
+  for (const e of emps) if (canReviewOnboarding(e)) await notify(e.id, title, body, kind);
 }
 
 // Onboarding is only editable by the employee in these states.
@@ -223,11 +253,14 @@ router.get('/employees', authenticate, async (req, res) => {
 router.put('/employees/:id/deactivate', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    if (actor?.role !== 'admin') return res.status(403).json({ error: 'Admin approval is required.' });
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'You cannot deactivate your own account.' });
     const target = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { role: true, name: true } });
     if (!target) return res.status(404).json({ error: 'Employee not found' });
-    if (target.role === 'admin' && actor.role !== 'admin') return res.status(403).json({ error: 'Cannot deactivate an admin.' });
+    if (target.role === 'admin') {
+      const activeAdmins = await prisma.employee.count({ where: { role: 'admin', status: 'active' } });
+      if (activeAdmins <= 1) return res.status(400).json({ error: 'The last active administrator cannot be deactivated.' });
+    }
     const emp = await prisma.employee.update({ where: { id: req.params.id }, data: { status: 'inactive' }, omit: { password: true } });
     await revokeAllUserSessions(emp.id);
     await audit(actor, 'deactivate', 'employee', emp.id, `Deactivated ${target.name}`);
@@ -237,21 +270,24 @@ router.put('/employees/:id/deactivate', authenticate, async (req, res) => {
   }
 });
 
-// Reassign reporting manager (admin or manageHierarchy cap) with cycle prevention.
+// Reassign reporting manager (admin-only) with cycle prevention.
 router.put('/employees/:id/manager', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    const allowed = actor?.role === 'admin' || effectivePerms(actor).caps.manageHierarchy;
-    if (!allowed) return res.status(403).json({ error: 'Not allowed.' });
+    if (actor?.role !== 'admin') return res.status(403).json({ error: 'Admin approval is required.' });
     const id = req.params.id;
     const managerId = req.body.managerId || null;
+    const target = await prisma.employee.findUnique({ where: { id }, select: { role: true } });
+    if (!target) return res.status(404).json({ error: 'Employee not found.' });
+    if (!managerId && target.role !== 'admin') return res.status(400).json({ error: 'Every non-admin employee must have a reporting manager.' });
     if (managerId === id) return res.status(400).json({ error: 'An employee cannot report to themselves.' });
     if (managerId) {
       // Walk up from the proposed manager; reaching the employee means a cycle.
       let cur = managerId, hops = 0;
       while (cur && hops < 50) {
         if (cur === id) return res.status(400).json({ error: 'This change would create a reporting cycle.' });
-        const up = await prisma.employee.findUnique({ where: { id: cur }, select: { managerId: true } });
+        const up = await prisma.employee.findUnique({ where: { id: cur }, select: { managerId: true, status: true } });
+        if (!up || up.status !== 'active') return res.status(400).json({ error: 'Reporting manager must be an active employee.' });
         cur = up?.managerId; hops++;
       }
     }
@@ -266,27 +302,40 @@ router.put('/employees/:id/manager', authenticate, async (req, res) => {
 router.post('/employees', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    const actorPerms = effectivePerms(actor);
     const isAdmin = actor.role === 'admin';
-    // Anyone with the createUsers capability may add a person below them.
-    if (!isAdmin && !actorPerms.caps.createUsers) {
-      return res.status(403).json({ error: 'You do not have permission to add users.' });
+    if (!isAdmin) return res.status(403).json({ error: 'Only an administrator can add employees.' });
+    const email = z.string().trim().email().safeParse(req.body.email);
+    const name = z.string().trim().min(2).max(120).safeParse(req.body.name);
+    if (!email.success || !name.success) {
+      return res.status(400).json({ error: 'A valid name and email are required.' });
     }
-    const data = coerceEmployeeNumbers({ ...req.body });
-    // Delegated grants must be a SUBSET of what the creator holds.
+    const data = coerceEmployeeNumbers(pickEmployeeInput(req.body));
+    data.email = email.data.toLowerCase();
+    data.name = name.data;
     const requested = normalizePerms(req.body.permissions);
-    if (!isAdmin && !isSubset(requested, actorPerms)) {
-      return res.status(403).json({ error: 'You can only grant permissions you hold yourself.' });
-    }
     data.permissions = JSON.stringify(requested);
-    // Non-admins create reports under themselves and cannot mint admins.
-    if (!isAdmin) {
-      data.role = data.role === 'admin' ? 'employee' : (data.role || 'employee');
-      data.managerId = data.managerId || actor.id;
+    data.role = data.role === 'admin' ? 'admin' : (data.role === 'candidate' ? 'candidate' : 'employee');
+    if (data.role !== 'admin') {
+      if (!data.managerId) return res.status(400).json({ error: 'A reporting manager is required.' });
+      const manager = await prisma.employee.findUnique({ where: { id: data.managerId }, select: { status: true } });
+      if (!manager || manager.status !== 'active') return res.status(400).json({ error: 'Reporting manager must be active.' });
+      data.status = 'onboarding_draft';
+      data.onboardingState = 'draft';
+    } else {
+      data.managerId = null;
+      data.status = 'active';
+      data.onboardingState = 'approved';
     }
     data.id = data.id || await nextEmployeeId();
-    // New hires get a default password (password123) until they change it.
-    data.password = await bcrypt.hash(data.password || 'password123', 12);
+    const rawPassword = typeof data.password === 'string' ? data.password : '';
+    if (rawPassword && rawPassword.length < 12) {
+      return res.status(400).json({ error: 'Temporary password must be at least 12 characters.' });
+    }
+    if (process.env.NODE_ENV === 'production' && !rawPassword) {
+      return res.status(400).json({ error: 'A secure temporary password is required in production.' });
+    }
+    // Local smoke/demo data may omit this; production can never fall back to it.
+    data.password = await bcrypt.hash(rawPassword || 'password123', 12);
     const employee = await prisma.$transaction(async (tx) => {
       const emp = await tx.employee.create({ data, omit: { password: true } });
       await tx.leaveBalance.upsert({
@@ -308,7 +357,7 @@ router.post('/employees', authenticate, async (req, res) => {
 // or header X-Confirm-Hard-Delete: true.
 router.delete('/employees/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
-    const allowed = process.env.ALLOW_HARD_DELETE === '1' ||
+    const allowed = process.env.ALLOW_HARD_DELETE === '1' &&
       req.get('X-Confirm-Hard-Delete') === 'true';
     if (!allowed) {
       return res.status(400).json({
@@ -317,6 +366,11 @@ router.delete('/employees/:id', authenticate, authorize(['admin']), async (req, 
     }
     const id = req.params.id;
     if (id === req.user.id) return res.status(400).json({ error: 'You cannot remove your own account.' });
+    const target = await prisma.employee.findUnique({ where: { id }, select: { role: true, status: true } });
+    if (target?.role === 'admin' && target.status === 'active') {
+      const activeAdmins = await prisma.employee.count({ where: { role: 'admin', status: 'active' } });
+      if (activeAdmins <= 1) return res.status(400).json({ error: 'The last active administrator cannot be deleted.' });
+    }
     await revokeAllUserSessions(id);
     // Cascades via Prisma schema relations where defined; explicit cleanup for orphans.
     await prisma.$transaction([
@@ -395,7 +449,7 @@ router.post('/me/onboarding/submit', authenticate, async (req, res) => {
     const docs = parseJson(me.documents);
     const missing = (await requiredDocKeys()).filter(k => !docs[k]);
     if (missing.length) return res.status(400).json({ error: 'Missing required documents', missing });
-    const emp = await prisma.employee.update({ where: { id: req.user.id }, data: { onboardingState: 'submitted', onboardingNote: null }, omit: { password: true } });
+    const emp = await prisma.employee.update({ where: { id: req.user.id }, data: { onboardingState: 'submitted', onboardingNote: null, status: 'onboarding_pending' }, omit: { password: true } });
     await audit(req.user, 'submit', 'onboarding', emp.id);
     await notifySupervisors('Onboarding submitted', `${emp.name} submitted their onboarding package for review.`, 'onboarding');
     res.json(emp);
@@ -406,7 +460,7 @@ router.post('/me/onboarding/submit', authenticate, async (req, res) => {
 router.put('/employees/:id/onboarding', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'Not allowed.' });
     const data = {};
     for (const k of ['experience', 'education', 'documents']) {
       if (req.body[k] !== undefined) data[k] = typeof req.body[k] === 'string' ? req.body[k] : JSON.stringify(req.body[k]);
@@ -421,9 +475,28 @@ router.put('/employees/:id/onboarding', authenticate, async (req, res) => {
 async function onboardingTransition(req, res, state, defaultNote) {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'Not allowed.' });
+    const target = await prisma.employee.findUnique({ where: { id: req.params.id } });
+    if (!target) return res.status(404).json({ error: 'Employee not found.' });
+    if (state === 'approved') {
+      if (target.onboardingState !== 'submitted') {
+        return res.status(400).json({ error: 'Only a submitted onboarding package can be approved.' });
+      }
+      const missing = (await requiredDocKeys()).filter((key) => !parseJson(target.documents)[key]);
+      if (missing.length) return res.status(400).json({ error: 'Required onboarding documents are missing.', missing });
+      if (!target.managerId) return res.status(400).json({ error: 'Assign a reporting manager before activation.' });
+      const manager = await prisma.employee.findUnique({ where: { id: target.managerId }, select: { status: true } });
+      if (!manager || manager.status !== 'active') return res.status(400).json({ error: 'Reporting manager must be active.' });
+    }
     const note = state === 'approved' ? null : (req.body.note || defaultNote);
-    const emp = await prisma.employee.update({ where: { id: req.params.id }, data: { onboardingState: state, onboardingNote: note }, omit: { password: true } });
+    const transitionData = { onboardingState: state, onboardingNote: note };
+    if (state === 'approved') {
+      transitionData.status = 'active';
+      transitionData.role = 'employee';
+    } else if (state === 'draft' || state === 'returned') {
+      transitionData.status = 'onboarding_draft';
+    }
+    const emp = await prisma.employee.update({ where: { id: req.params.id }, data: transitionData, omit: { password: true } });
     await audit(actor, state === 'approved' ? 'approve' : state === 'returned' ? 'return' : 'push', 'onboarding', emp.id, note || undefined);
     const msg = state === 'approved' ? 'Your onboarding has been approved and locked.'
       : state === 'returned' ? `Your onboarding was returned: ${note}`
@@ -1042,12 +1115,16 @@ router.delete('/assets/:id', authenticate, authorize(['admin']), async (req, res
 // Helpdesk
 router.get('/helpdesk', authenticate, async (req, res) => {
   try {
+    const actor = await loadActor(req);
+    const canModerate = actor?.role === 'admin' || effectivePerms(actor).caps.moderateHelpdesk;
     const tickets = await prisma.helpdeskTicket.findMany({
+      where: canModerate ? {} : { employeeId: actor.id },
       include: {
         employee: { select: { name: true } },
         replies: { include: { sender: { select: { name: true } } } }
       },
-      orderBy: { createdDate: 'desc' }
+      orderBy: { createdDate: 'desc' },
+      take: 200
     });
     res.json(tickets);
   } catch (error) {
@@ -1057,7 +1134,11 @@ router.get('/helpdesk', authenticate, async (req, res) => {
 
 router.post('/helpdesk', authenticate, async (req, res) => {
   try {
-    const { subject, category, description, priority } = req.body;
+    const parsed = helpdeskCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid helpdesk ticket', details: parsed.error.flatten() });
+    }
+    const { subject, category, description, priority } = parsed.data;
     const ticket = await prisma.helpdeskTicket.create({
       data: {
         employeeId: req.user.id, subject, category, description,
@@ -1073,6 +1154,11 @@ router.post('/helpdesk', authenticate, async (req, res) => {
 
 router.post('/helpdesk/:id/replies', authenticate, async (req, res) => {
   try {
+    const parsed = helpdeskReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid helpdesk reply', details: parsed.error.flatten() });
+    }
+    const { text, resolve } = parsed.data;
     const ticket = await prisma.helpdeskTicket.findUnique({ where: { id: req.params.id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     // Moderators (admin or moderateHelpdesk cap) may reply anywhere; others
@@ -1082,21 +1168,21 @@ router.post('/helpdesk/:id/replies', authenticate, async (req, res) => {
     if (!isMod && ticket.employeeId !== req.user.id) {
       return res.status(403).json({ error: 'You can only reply to your own tickets.' });
     }
-    if (req.body.resolve && !isMod) {
+    if (resolve && !isMod) {
       return res.status(403).json({ error: 'Only helpdesk moderators can resolve tickets.' });
     }
     const reply = await prisma.ticketReply.create({
       data: {
         ticketId: req.params.id, senderId: req.user.id,
-        text: req.body.text, date: new Date().toISOString().split('T')[0]
+        text, date: new Date().toISOString().split('T')[0]
       }
     });
-    if (req.body.resolve) {
+    if (resolve) {
       await prisma.helpdeskTicket.update({ where: { id: req.params.id }, data: { status: 'Resolved' } });
       await audit(actor, 'resolve', 'ticket', ticket.id, ticket.subject);
     }
     if (ticket.employeeId !== req.user.id) {
-      await notify(ticket.employeeId, req.body.resolve ? 'Ticket resolved' : 'New reply on your ticket', `"${ticket.subject}": ${String(req.body.text || '').slice(0, 120)}`, 'helpdesk');
+      await notify(ticket.employeeId, resolve ? 'Ticket resolved' : 'New reply on your ticket', `"${ticket.subject}": ${text.slice(0, 120)}`, 'helpdesk');
     }
     res.json(reply);
   } catch (error) {
@@ -1136,7 +1222,7 @@ router.delete('/helpdesk/:id', authenticate, authorize(['admin']), async (req, r
 async function requirePayrollManage(req, res) {
   const actor = await loadActor(req);
   if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return null; }
-  if (actor.role === 'admin' || hasModule(actor, 'payroll')) return actor;
+  if (canViewAllPayroll(actor)) return actor;
   res.status(403).json({ error: 'Payroll management requires payroll module access.' });
   return null;
 }
@@ -1146,7 +1232,7 @@ router.get('/payroll', authenticate, async (req, res) => {
     const actor = await loadActor(req);
     if (!actor) return res.status(401).json({ error: 'Unauthorized' });
     // All employees see own slips; admin / payroll module see all.
-    const canAll = actor.role === 'admin' || hasModule(actor, 'payroll');
+    const canAll = canViewAllPayroll(actor);
     const where = canAll ? {} : { employeeId: actor.id };
     const payroll = await prisma.payroll.findMany({
       where, include: { employee: { select: { name: true } } }, orderBy: { paymentDate: 'desc' }
@@ -1174,7 +1260,7 @@ router.post('/payroll/process', authenticate, authorize(['admin']), async (req, 
     ]);
     const declMap = new Map(decls.map(d => [d.employeeId, d]));
     const existingMap = new Map(existingSlips.map(p => [p.employeeId, p]));
-    const results = [];
+    const operations = [];
     for (const emp of employees) {
       const decl = declMap.get(emp.id);
       const gross = emp.salaryBasic + emp.salaryAllow;
@@ -1191,11 +1277,12 @@ router.post('/payroll/process', authenticate, authorize(['admin']), async (req, 
         paymentDate: new Date().toISOString().split('T')[0]
       };
       const existing = existingMap.get(emp.id);
-      const slip = existing
-        ? await prisma.payroll.update({ where: { id: existing.id }, data })
-        : await prisma.payroll.create({ data });
-      results.push(slip);
+      operations.push(existing
+        ? prisma.payroll.update({ where: { id: existing.id }, data })
+        : prisma.payroll.create({ data }));
     }
+    // All payslips for a cycle succeed or fail together.
+    const results = await prisma.$transaction(operations);
     await audit(req.user, 'process', 'payroll', month, `${results.length} payslip(s)`);
     res.json(results);
   } catch (error) {
@@ -1258,7 +1345,40 @@ router.post('/tax', authenticate, async (req, res) => {
   }
 });
 
-// What the current user is allowed to grant (their own effective permissions).
+// Admin control-centre status. Values describe server-enforced controls, not
+// decorative UI switches.
+router.get('/admin/guardrails', authenticate, authorize(['admin']), async (_req, res) => {
+  try {
+    const [activeAdmins, activeEmployees, drafts, pendingOnboarding, inactive, missingManagers] = await Promise.all([
+      prisma.employee.count({ where: { role: 'admin', status: 'active' } }),
+      prisma.employee.count({ where: { status: 'active' } }),
+      prisma.employee.count({ where: { onboardingState: { in: ['draft', 'returned'] } } }),
+      prisma.employee.count({ where: { onboardingState: 'submitted' } }),
+      prisma.employee.count({ where: { status: 'inactive' } }),
+      prisma.employee.count({ where: { role: { not: 'admin' }, status: 'active', managerId: null } })
+    ]);
+    res.json({
+      healthy: activeAdmins > 0 && missingManagers === 0,
+      counts: { activeAdmins, activeEmployees, drafts, pendingOnboarding, inactive, missingManagers },
+      controls: [
+        { key: 'bootstrap', label: 'One-time Super Admin bootstrap', enforced: true, detail: 'Bootstrap credentials are ignored after the first admin exists.' },
+        { key: 'provisioning', label: 'Admin-only employee provisioning', enforced: true, detail: 'Employees and managers cannot create accounts.' },
+        { key: 'activation', label: 'Draft-to-approval activation', enforced: true, detail: 'New employees activate only after onboarding approval.' },
+        { key: 'hierarchy', label: 'Protected reporting hierarchy', enforced: true, detail: 'Admin-only changes; active managers required; self-links and cycles rejected.' },
+        { key: 'roles', label: 'Admin-only access grants', enforced: true, detail: 'Roles and permissions are applied only by an administrator.' },
+        { key: 'last-admin', label: 'Last administrator protection', enforced: true, detail: 'The final active administrator cannot be deactivated or deleted.' },
+        { key: 'deletion', label: 'Deactivate instead of delete', enforced: true, detail: 'History is preserved; hard deletion is disabled in production by default.' },
+        { key: 'audit', label: 'Sensitive-action audit trail', enforced: true, detail: 'Provisioning, activation, hierarchy, permission and password actions are recorded.' },
+        { key: 'sessions', label: 'Session revocation', enforced: true, detail: 'Deactivation and password resets invalidate active sessions.' },
+        { key: 'mfa', label: 'Administrator MFA', enforced: false, detail: 'Configure MFA through the production identity provider before launch.' }
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load admin guardrails.' });
+  }
+});
+
+// What an admin is allowed to grant.
 router.get('/permissions/grantable', authenticate, async (req, res) => {
   try {
     res.json(effectivePerms(await loadActor(req)));
@@ -1272,22 +1392,15 @@ router.get('/permissions/requests', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
     const isAdmin = actor?.role === 'admin';
-    const canReview = isAdmin || effectivePerms(actor).caps.createUsers || effectivePerms(actor).caps.manageHierarchy;
-    if (!canReview) return res.status(403).json({ error: 'Not allowed.' });
+    if (!isAdmin) return res.status(403).json({ error: 'Admin approval is required.' });
     const rows = await prisma.permissionRequest.findMany({
-      where: isAdmin ? {} : { status: 'Pending' },
+      where: {},
       orderBy: { createdAt: 'desc' },
       take: 100
     });
-    // Non-admins only see requests for their direct reports or self-requested needing their stamp
     const emps = await prisma.employee.findMany({ select: { id: true, name: true, managerId: true } });
     const nameOf = Object.fromEntries(emps.map((e) => [e.id, e.name]));
-    const filtered = rows.filter((r) => {
-      if (isAdmin) return true;
-      const target = emps.find((e) => e.id === r.targetId);
-      return target?.managerId === actor.id || r.requestedBy === actor.id;
-    });
-    res.json(filtered.map((r) => ({
+    res.json(rows.map((r) => ({
       ...r,
       targetName: nameOf[r.targetId],
       requesterName: nameOf[r.requestedBy],
@@ -1302,15 +1415,10 @@ router.put('/permissions/requests/:id/decide', authenticate, async (req, res) =>
   try {
     const actor = await loadActor(req);
     const isAdmin = actor?.role === 'admin';
-    const canReview = isAdmin || effectivePerms(actor).caps.createUsers || effectivePerms(actor).caps.manageHierarchy;
-    if (!canReview) return res.status(403).json({ error: 'Not allowed.' });
+    if (!isAdmin) return res.status(403).json({ error: 'Admin approval is required.' });
     const approve = !!req.body.approve;
     const row = await prisma.permissionRequest.findUnique({ where: { id: req.params.id } });
     if (!row || row.status !== 'Pending') return res.status(400).json({ error: 'Request not pending.' });
-    const target = await prisma.employee.findUnique({ where: { id: row.targetId } });
-    if (!isAdmin && target?.managerId !== actor.id) {
-      return res.status(403).json({ error: 'Only the manager or admin can stamp this request.' });
-    }
     const stamp = makeStamp(actor, approve ? 'APPROVED' : 'REJECTED');
     if (approve) {
       const payload = parseJson(row.payload);
@@ -1342,60 +1450,24 @@ router.put('/permissions/requests/:id/decide', authenticate, async (req, res) =>
   }
 });
 
-// Delegated permission management — view/edit levels; non-admin escalates for stamp.
+// Permission management is deliberately admin-only.
 router.put('/employees/:id/permissions', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    const actorPerms = effectivePerms(actor);
     const isAdmin = actor.role === 'admin';
-    if (!isAdmin && !actorPerms.caps.createUsers) {
-      return res.status(403).json({ error: 'You cannot manage permissions.' });
-    }
+    if (!isAdmin) return res.status(403).json({ error: 'Only an administrator can manage permissions.' });
     const requested = normalizePerms(req.body.permissions);
-    if (!isAdmin && !isSubset(requested, actorPerms)) {
-      return res.status(403).json({ error: 'You can only grant permissions you hold yourself (including view/edit level).' });
-    }
     const target = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { role: true, name: true, managerId: true } });
     if (!target) return res.status(404).json({ error: 'Employee not found' });
-    if (!isAdmin && target.role === 'admin') return res.status(403).json({ error: 'Cannot edit an admin\'s permissions.' });
-
-    // Super admin: apply immediately with stamp.
-    if (isAdmin) {
-      const stamp = makeStamp(actor, 'ADMIN-STAMP');
-      const emp = await prisma.employee.update({
-        where: { id: req.params.id },
-        data: { permissions: JSON.stringify(requested) },
-        omit: { password: true }
-      });
-      await audit(actor, 'permissions-change', 'employee', emp.id, `${stamp} ${JSON.stringify(requested)}`);
-      await notify(emp.id, 'Your access changed', `Updated by admin. Stamp: ${stamp}`, 'permission');
-      return res.json({ ...emp, stamp, applied: true });
-    }
-
-    // Others: escalate for manager / admin stamp (capture trail).
-    const stampPending = makeStamp(actor, 'ESCALATED');
-    const pr = await prisma.permissionRequest.create({
-      data: {
-        targetId: req.params.id,
-        requestedBy: actor.id,
-        payload: JSON.stringify(requested),
-        status: 'Pending',
-        stamp: stampPending,
-        note: req.body.note || null
-      }
+    const stamp = makeStamp(actor, 'ADMIN-STAMP');
+    const emp = await prisma.employee.update({
+      where: { id: req.params.id },
+      data: { permissions: JSON.stringify(requested) },
+      omit: { password: true }
     });
-    await audit(actor, 'permissions-escalate', 'permission-request', pr.id, stampPending);
-    // Notify target's manager and all admins
-    const admins = await prisma.employee.findMany({ where: { role: 'admin', status: 'active' }, select: { id: true } });
-    for (const a of admins) {
-      await notify(a.id, 'Permission change needs stamp',
-        `${actor.name} requested access change for ${target.name}. Review Permissions → Escalations.`, 'permission');
-    }
-    if (target.managerId && target.managerId !== actor.id) {
-      await notify(target.managerId, 'Permission change needs stamp',
-        `${actor.name} requested access change for ${target.name}.`, 'permission');
-    }
-    res.json({ applied: false, escalated: true, request: pr, message: 'Submitted for manager/admin stamp. Not applied yet.' });
+    await audit(actor, 'permissions-change', 'employee', emp.id, `${stamp} ${JSON.stringify(requested)}`);
+    await notify(emp.id, 'Your access changed', `Updated by admin. Stamp: ${stamp}`, 'permission');
+    return res.json({ ...emp, stamp, applied: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to update permissions' });
@@ -1405,8 +1477,26 @@ router.put('/employees/:id/permissions', authenticate, async (req, res) => {
 // Onboarding / generic employee update (admin)
 router.put('/employees/:id', authenticate, authorize(['admin']), async (req, res) => {
   try {
-    const data = coerceEmployeeNumbers({ ...req.body });
-    delete data.id; delete data.email; delete data.password;
+    const data = coerceEmployeeNumbers(pickEmployeeInput(req.body));
+    delete data.email; delete data.password;
+    const target = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { role: true, status: true, onboardingState: true } });
+    if (!target) return res.status(404).json({ error: 'Employee not found.' });
+    if (target.role === 'admin' && data.role && data.role !== 'admin') {
+      const activeAdmins = await prisma.employee.count({ where: { role: 'admin', status: 'active' } });
+      if (activeAdmins <= 1) return res.status(400).json({ error: 'The last active administrator cannot be demoted.' });
+    }
+    const resultingRole = data.role || target.role;
+    // Reporting-line changes use the dedicated cycle-safe endpoint.
+    delete data.managerId;
+    if (resultingRole === 'admin') {
+      data.managerId = null;
+    } else {
+      const current = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { managerId: true } });
+      if (!current?.managerId) return res.status(400).json({ error: 'Every non-admin employee must have a reporting manager.' });
+    }
+    if (data.status === 'active' && (data.onboardingState || target.onboardingState) !== 'approved') {
+      return res.status(400).json({ error: 'Complete onboarding approval before activation.' });
+    }
     const emp = await prisma.employee.update({ where: { id: req.params.id }, data, omit: { password: true } });
     await syncEmployeeDrive(emp);
     await audit(req.user, 'update', 'employee', emp.id, Object.keys(data).join(', '));
@@ -1532,6 +1622,18 @@ router.get('/search', authenticate, async (req, res) => {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ employees: [], tickets: [], assets: [] });
     const actor = await loadActor(req);
+    const canModerateHelpdesk = actor?.role === 'admin' || effectivePerms(actor).caps.moderateHelpdesk;
+    const ticketSearch = {
+      AND: [
+        {
+          OR: [
+            { subject: { contains: q } },
+            { description: { contains: q } }
+          ]
+        },
+        ...(canModerateHelpdesk ? [] : [{ employeeId: actor.id }])
+      ]
+    };
     const [employees, tickets, assets] = await Promise.all([
       prisma.employee.findMany({
         where: {
@@ -1547,12 +1649,7 @@ router.get('/search', authenticate, async (req, res) => {
         select: { id: true, name: true, email: true, department: true, designation: true, role: true }
       }),
       prisma.helpdeskTicket.findMany({
-        where: {
-          OR: [
-            { subject: { contains: q } },
-            { description: { contains: q } }
-          ]
-        },
+        where: ticketSearch,
         take: 8,
         select: { id: true, subject: true, status: true, priority: true, employeeId: true }
       }),
@@ -1634,7 +1731,7 @@ const HR_DOC_TYPES = ['offer_letter', 'relieving_letter', 'resignation_ack', 'on
 router.get('/hr-documents', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    const canManage = actor.role === 'admin' || isSupervisor(actor);
+    const canManage = canReviewOnboarding(actor);
     const where = canManage && req.query.all === '1' ? {} : { employeeId: req.user.id };
     if (canManage && req.query.employeeId) where.employeeId = String(req.query.employeeId);
     const rows = await prisma.hrDocument.findMany({ where, orderBy: { createdAt: 'desc' } });
@@ -1644,7 +1741,7 @@ router.get('/hr-documents', authenticate, async (req, res) => {
 router.post('/hr-documents', authenticate, async (req, res) => {
   try {
     const actor = await loadActor(req);
-    if (!isSupervisor(actor) && actor.role !== 'admin') return res.status(403).json({ error: 'HR/Admin access required to issue documents.' });
+    if (!canReviewOnboarding(actor)) return res.status(403).json({ error: 'HR/Admin access required to issue documents.' });
     const { employeeId, type, title, body } = req.body;
     if (!employeeId || !HR_DOC_TYPES.includes(type) || !title) {
       return res.status(400).json({ error: 'employeeId, type, title required.' });

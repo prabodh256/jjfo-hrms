@@ -56,6 +56,7 @@ function Leaves() {
   const [balEdit, setBalEdit] = useState({});
   const [reg, setReg] = useState(REG_EMPTY);
   const [bulk, setBulk] = useState({ annual: 15, sick: 7, casual: 7, all: true, selected: [] });
+  const [historyYear, setHistoryYear] = useState(String(new Date().getFullYear()));
 
   useEffect(() => {
     fetchLeaves(); fetchLeaveBalances(); fetchEmployees(); fetchHolidays();
@@ -76,7 +77,9 @@ function Leaves() {
   const myBal = leaveBalances.find(b => b.employeeId === user?.id);
   // Server already scopes trail (own + team for managers + all for admin)
   const visibleLeaves = leaves;
-  const teamTrail = leaves.filter(l => l.employeeId !== user?.id);
+  const leaveYears = [...new Set(leaves.map(l => String(l.startDate || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const yearLeaves = historyYear === 'all' ? visibleLeaves : visibleLeaves.filter(l => String(l.startDate || '').startsWith(historyYear));
+  const teamTrail = yearLeaves.filter(l => l.employeeId !== user?.id);
   const pendingForMe = leaves.filter(l => l.status === 'Pending' && (isAdmin || l.currentApproverId === user?.id));
 
   const submit = async (e) => {
@@ -395,6 +398,7 @@ function Leaves() {
 
       {tab === 'history' && (
         <div className="table-responsive">
+          <div className="history-filter"><label htmlFor="leave-history-year">Leave year</label><select id="leave-history-year" className="form-control" value={historyYear} onChange={(e) => setHistoryYear(e.target.value)}><option value="all">All years</option>{leaveYears.map((year) => <option value={year} key={year}>{year}</option>)}</select><span>{yearLeaves.length} record(s)</span></div>
           {(isAdmin || canApprove) && teamTrail.length > 0 && (
             <p className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
               Showing your leaves and team trail ({teamTrail.length} team row(s)). Days are reserved when applied.
@@ -403,7 +407,7 @@ function Leaves() {
           <table className="table">
             <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th><th>Approval</th><th></th></tr></thead>
             <tbody>
-              {visibleLeaves.length === 0 ? <tr><td colSpan="8">No leave records.</td></tr> : visibleLeaves.map(l => (
+              {yearLeaves.length === 0 ? <tr><td colSpan="8">No leave records for the selected year.</td></tr> : yearLeaves.map(l => (
                 <tr key={l.id} className={`${l.employeeId !== user?.id ? 'trail-team-row' : ''} ${l.lateApplied ? 'leave-late-row' : ''}`}>
                   <td>
                     <strong>{l.employee?.name || l.employeeId}</strong>
