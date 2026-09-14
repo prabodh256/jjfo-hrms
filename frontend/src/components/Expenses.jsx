@@ -10,7 +10,7 @@ export default function Expenses() {
   const [form, setForm] = useState(EMPTY);
   const [msg, setMsg] = useState('');
   const isAdmin = user?.role === 'admin';
-  const canDecide = isAdmin || hasCap(user, 'approveLeaves') || hasCap(user, 'createUsers');
+  const canDecide = isAdmin || hasCap(user, 'approveLeaves');
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 

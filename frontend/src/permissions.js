@@ -21,10 +21,8 @@ export const MODULES = [
 ];
 
 export const CAPS = [
-  { key: 'createUsers', label: 'Create / manage users' },
   { key: 'approveLeaves', label: 'Approve leaves' },
   { key: 'accessFinancials', label: 'Access financials' },
-  { key: 'manageHierarchy', label: 'Manage hierarchy' },
   { key: 'moderateHelpdesk', label: 'Moderate helpdesk' }
 ];
 

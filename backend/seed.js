@@ -85,7 +85,7 @@ async function main() {
       documents: JSON.stringify({ relievingLetter: 'EMP001_RelievingLetter.pdf', idProof: 'EMP001_IDProof.pdf' }),
       managerId: null,
       preferences: JSON.stringify({ font: 'Outfit', theme: 'light', density: 'comfortable' }),
-      permissions: JSON.stringify({ accessFinancials: true, manageHierarchy: true, moderateHelpdesk: true })
+      permissions: JSON.stringify({ accessFinancials: true, moderateHelpdesk: true })
     },
     {
       id: 'EMP002', name: 'Priya Sharma', role: 'employee', status: 'active',
@@ -98,9 +98,8 @@ async function main() {
       documents: JSON.stringify({ relievingLetter: 'EMP002_RelievingLetter.pdf' }),
       managerId: 'EMP001',
       preferences: JSON.stringify({ font: 'Inter', theme: 'light', fontSize: 'medium' }),
-      // Team lead: can create reports (subset) and approve leaves at level 1.
-      // No payroll by default — admin must grant payroll module explicitly.
-      permissions: JSON.stringify({ modules: { directory: 'edit', onboarding: 'edit' }, caps: { createUsers: true, approveLeaves: true, accessFinancials: true } })
+      // Team lead: may approve leave, but account creation remains admin-only.
+      permissions: JSON.stringify({ modules: { directory: 'edit', onboarding: 'view' }, caps: { approveLeaves: true, accessFinancials: true } })
     },
     {
       id: 'EMP003', name: 'Amit Patel', role: 'employee', status: 'active',
@@ -126,7 +125,7 @@ async function main() {
       documents: JSON.stringify({}),
       managerId: 'EMP002',
       preferences: JSON.stringify({ font: 'Outfit', theme: 'light', density: 'comfortable' }),
-      permissions: JSON.stringify({ accessFinancials: false, manageHierarchy: false, moderateHelpdesk: false })
+      permissions: JSON.stringify({ accessFinancials: false, moderateHelpdesk: false })
     },
     {
       id: 'EMP005', name: 'Vikram Singh', role: 'candidate', status: 'onboarding_draft',

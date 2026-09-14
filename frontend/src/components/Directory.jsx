@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 import Modal from './Modal';
 import EmployeeForm from './EmployeeForm';
 import Avatar from './Avatar';
@@ -18,8 +17,8 @@ function Directory() {
   useEffect(() => { if (tab === 'timeline' && user?.id) apiGet(`/api/enterprise/history/${user.id}`).then((data) => setTimeline(data.events || [])).catch(() => setTimeline([])); }, [tab, user?.id]);
 
   const isAdmin = user?.role === 'admin';
-  const canCreate = hasCap(user, 'createUsers');
-  const canHierarchy = isAdmin || hasCap(user, 'manageHierarchy');
+  const canCreate = isAdmin;
+  const canHierarchy = isAdmin;
   const q = query.trim().toLowerCase();
   const filtered = employees.filter(e =>
     !q || [e.name, e.email, e.department, e.designation].some(v => (v || '').toLowerCase().includes(q))
@@ -195,7 +194,7 @@ function Directory() {
               </select>
             </div>
           )}
-          <EmployeeForm employee={modal.employee} mode={modal.mode} grantable={modal.mode !== 'self' ? grantable : null} onSubmit={submit} onCancel={() => setModal(null)} />
+          <EmployeeForm employee={modal.employee} mode={modal.mode} grantable={modal.mode !== 'self' ? grantable : null} managerOptions={employees} onSubmit={submit} onCancel={() => setModal(null)} />
         </Modal>
       )}
     </div>

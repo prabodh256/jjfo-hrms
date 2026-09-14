@@ -32,6 +32,7 @@ const enterpriseRoutes = require('./routes/enterprise');
 const { requireCsrfHeader } = require('./middleware/auth');
 const prisma = require('./prisma/client');
 const { purgeExpiredSessions } = require('./lib/sessions');
+const { ensureBootstrapAdmin } = require('./lib/bootstrap-admin');
 
 const app = express();
 
@@ -110,13 +111,28 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal Server Error', requestId: req.requestId });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`JJFO HRMS API listening on port ${PORT} (origin ${CLIENT_ORIGIN})`);
-  setInterval(() => { purgeExpiredSessions(); }, 60 * 60 * 1000).unref?.();
+let server;
+
+async function start() {
+  const bootstrap = await ensureBootstrapAdmin();
+  if (bootstrap.created) console.log(`Created one-time bootstrap administrator (${bootstrap.id}).`);
+  server = app.listen(PORT, () => {
+    console.log(`JJFO HRMS API listening on port ${PORT} (origin ${CLIENT_ORIGIN})`);
+    setInterval(() => { purgeExpiredSessions(); }, 60 * 60 * 1000).unref?.();
+  });
+}
+
+start().catch((error) => {
+  console.error(`FATAL ERROR: ${error.message}`);
+  process.exit(1);
 });
 
 async function shutdown(signal) {
   console.log(`${signal} received; shutting down gracefully`);
+  if (!server) {
+    await prisma.$disconnect();
+    process.exit(0);
+  }
   server.close(async () => {
     await prisma.$disconnect();
     process.exit(0);

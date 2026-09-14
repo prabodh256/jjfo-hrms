@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 
 export default function Engagement() {
   const { surveys, fetchSurveys, createSurvey, respondSurvey, user } = useStore();
-  const canCreate = user?.role === 'admin' || hasCap(user, 'createUsers');
+  const canCreate = user?.role === 'admin';
   const [msg, setMsg] = useState('');
   const [answers, setAnswers] = useState({});
   const [newS, setNewS] = useState({

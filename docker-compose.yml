@@ -10,11 +10,11 @@ services:
       PORT: 4000
       NODE_ENV: production
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:4000}
-      DATABASE_URL: file:./data/prod.db
+      DATABASE_URL: file:/app/storage/prod.db
+      UPLOAD_ROOT: /app/storage/uploads
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
     volumes:
-      - hrms-data:/app/prisma/data
-      - hrms-uploads:/app/uploads
+      - hrms-storage:/app/storage
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4000/ready"]
       interval: 30s
@@ -23,5 +23,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  hrms-data:
-  hrms-uploads:
+  hrms-storage:

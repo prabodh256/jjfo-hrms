@@ -6,7 +6,7 @@ const ALL_MODULES = [
   'expenses', 'engagement', 'policies', 'insurance', 'peopleops'
 ];
 const ALL_CAPS = [
-  'createUsers', 'approveLeaves', 'accessFinancials', 'manageHierarchy', 'moderateHelpdesk'
+  'approveLeaves', 'accessFinancials', 'moderateHelpdesk'
 ];
 // Self-service: everyone sees own payslips; payroll *management* still needs grant/admin.
 const BASE_MODULES = [
@@ -66,7 +66,6 @@ function effectivePerms(emp) {
   for (const [k, lvl] of Object.entries(stored)) moduleLevels[k] = lvl;
   const caps = (p.caps && typeof p.caps === 'object') ? { ...p.caps } : {
     accessFinancials: !!p.accessFinancials,
-    manageHierarchy: !!p.manageHierarchy,
     moderateHelpdesk: !!p.moderateHelpdesk
   };
   for (const c of ALL_CAPS) caps[c] = !!caps[c];
@@ -118,7 +117,7 @@ function isSubset(granted, granter) {
 }
 
 const isSupervisor = (actor) =>
-  !!actor && (actor.role === 'admin' || effectivePerms(actor).caps.createUsers);
+  !!actor && actor.role === 'admin';
 
 function redactEmployee(emp, viewer) {
   if (!emp) return emp;

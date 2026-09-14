@@ -81,22 +81,29 @@ async function main() {
   });
   check('T-VALID helpdesk payload validated', invalidTicket.status === 400);
 
-  // ---- Delegated permissions (subset) ----
+  // ---- Admin-first provisioning and permission guardrails ----
   const g = await api('GET', '/api/permissions/grantable', { cookie: priya.cookie });
   check('T-PERM grantable excludes ungranted module (gsync)', g.status === 200 && !g.json.modules.includes('gsync'));
   check('T-PERM grantable excludes ungranted cap (manageHierarchy)', !g.json.caps.manageHierarchy);
   check('T-PERM grantable includes granted (directory + approveLeaves)', g.json.modules.includes('directory') && !!g.json.caps.approveLeaves);
 
   const email = `smoke_${Date.now()}@jjfo.com`;
-  const created = await api('POST', '/api/employees', { cookie: priya.cookie, body: {
+  const delegatedCreate = await api('POST', '/api/employees', { cookie: priya.cookie, body: {
     name: 'Smoke Sub', email, department: 'Finance & Investments', designation: 'Analyst',
+    managerId: 'EMP002',
     permissions: { modules: ['directory'], caps: { approveLeaves: true } },
     documents: { joiningLetter: 'smoke_join.pdf' }
   } });
-  check('T-PERM delegated create 200', created.status === 200, `status=${created.status} ${JSON.stringify(created.json)}`);
+  check('T-ADMIN non-admin employee creation → 403', delegatedCreate.status === 403, `status=${delegatedCreate.status}`);
+  const created = await api('POST', '/api/employees', { cookie: admin.cookie, body: {
+    name: 'Smoke Sub', email, department: 'Finance & Investments', designation: 'Analyst',
+    managerId: 'EMP002', permissions: { modules: ['directory'], caps: { approveLeaves: true } },
+    documents: { joiningLetter: 'smoke_join.pdf' }
+  } });
+  check('T-ADMIN admin creates employee', created.status === 200, `status=${created.status} ${JSON.stringify(created.json)}`);
   const subId = created.json?.id;
-  check('T-PERM subordinate managerId = creator (EMP002)', created.json?.managerId === 'EMP002');
-  check('T-PERM subordinate role coerced to employee', created.json?.role === 'employee');
+  check('T-ADMIN reporting manager is required and retained', created.json?.managerId === 'EMP002');
+  check('T-ADMIN new employee starts in onboarding draft', created.json?.role === 'employee' && created.json?.status === 'onboarding_draft');
   const over1 = await api('POST', '/api/employees', { cookie: priya.cookie, body: { name: 'Bad', email: `bad_${Date.now()}@jjfo.com`, permissions: { modules: ['gsync'], caps: {} } } });
   check('T-PERM over-grant module → 403', over1.status === 403, `status=${over1.status}`);
   const over2 = await api('POST', '/api/employees', { cookie: priya.cookie, body: { name: 'Bad2', email: `bad2_${Date.now()}@jjfo.com`, permissions: { modules: [], caps: { manageHierarchy: true } } } });
@@ -196,7 +203,7 @@ async function main() {
   check('T-HELP owner resolve without cap → 403', ownResolve.status === 403, `status=${ownResolve.status}`);
 
   const tmpEmail = `pw_${Date.now()}@jjfo.com`;
-  const tmp = await api('POST', '/api/employees', { cookie: admin.cookie, body: { name: 'Pw Temp', email: tmpEmail, department: 'IT & Security' } });
+  const tmp = await api('POST', '/api/employees', { cookie: admin.cookie, body: { name: 'Pw Temp', email: tmpEmail, department: 'IT & Security', managerId: 'EMP001' } });
   const t1 = await login(tmpEmail, 'password123');
   check('T-PWD  new hire logs in with default password', t1.status === 200, `status=${t1.status}`);
   const wrong = await api('PUT', '/api/me/password', { cookie: t1.cookie, body: { currentPassword: 'nope', newPassword: 'newpass123' } });
@@ -283,21 +290,21 @@ async function main() {
   const trail = await api('GET', '/api/leaves', { cookie: priya.cookie });
   check('T-LEAVE manager sees team trail', trail.status === 200 && Array.isArray(trail.json) && trail.json.some(l => l.employeeId === 'EMP004' || l.employeeId === 'EMP002'), `n=${trail.json?.length}`);
 
-  // Permission escalate (non-admin) then stamp — only modules granter holds
-  const esc = await api('PUT', '/api/employees/EMP003/permissions', {
+  // Permission changes are admin-only and stamped immediately.
+  const deniedPerm = await api('PUT', '/api/employees/EMP003/permissions', {
     cookie: priya.cookie,
     body: { permissions: { modules: { directory: 'view', onboarding: 'view' }, caps: { approveLeaves: true } } }
   });
-  check('T-PERM non-admin escalates (not applied)', esc.status === 200 && esc.json?.escalated === true, JSON.stringify(esc.json));
-  const reqs = await api('GET', '/api/permissions/requests', { cookie: admin.cookie });
-  const pend = reqs.json?.find?.(r => r.status === 'Pending' && r.targetId === 'EMP003');
-  check('T-PERM pending escalation listed', !!pend, `n=${reqs.json?.length}`);
-  if (pend) {
-    const dec = await api('PUT', `/api/permissions/requests/${pend.id}/decide`, { cookie: admin.cookie, body: { approve: true } });
-    check('T-PERM admin stamp approve', dec.status === 200 && dec.json?.status === 'Approved', `status=${dec.status}`);
-  } else {
-    check('T-PERM admin stamp approve', false, 'no pending');
-  }
+  check('T-PERM non-admin permission change → 403', deniedPerm.status === 403, JSON.stringify(deniedPerm.json));
+  const stampedPerm = await api('PUT', '/api/employees/EMP003/permissions', {
+    cookie: admin.cookie,
+    body: { permissions: { modules: { assets: 'edit' }, caps: { approveLeaves: true, moderateHelpdesk: true } } }
+  });
+  check('T-PERM admin permission stamp applies', stampedPerm.status === 200 && stampedPerm.json?.applied === true && !!stampedPerm.json?.stamp, JSON.stringify(stampedPerm.json));
+  const guardrails = await api('GET', '/api/admin/guardrails', { cookie: admin.cookie });
+  check('T-ADMIN guardrail status healthy', guardrails.status === 200 && guardrails.json?.healthy === true && guardrails.json?.controls?.some(c => c.key === 'provisioning' && c.enforced), JSON.stringify(guardrails.json));
+  const guardrailsDenied = await api('GET', '/api/admin/guardrails', { cookie: priya.cookie });
+  check('T-ADMIN guardrail status is admin-only', guardrailsDenied.status === 403, `status=${guardrailsDenied.status}`);
 
   // ---- Gap build: audit, notifications, attendance, holidays, lifecycle, reports ----
   const audit1 = await api('GET', '/api/audit?entity=employee', { cookie: admin.cookie });
@@ -350,7 +357,7 @@ async function main() {
 
   // Deactivate-only lifecycle
   const dEmail = `deact_${Date.now()}@jjfo.com`;
-  const dEmp = await api('POST', '/api/employees', { cookie: admin.cookie, body: { name: 'Deact Temp', email: dEmail, department: 'IT & Security', status: 'active' } });
+  const dEmp = await api('POST', '/api/employees', { cookie: admin.cookie, body: { name: 'Deact Temp', email: dEmail, department: 'IT & Security', status: 'active', managerId: 'EMP001' } });
   const dLogin1 = await login(dEmail, 'password123');
   check('T-LIFE temp logs in before deactivation', dLogin1.status === 200);
   const deact = await api('PUT', `/api/employees/${dEmp.json?.id}/deactivate`, { cookie: admin.cookie });

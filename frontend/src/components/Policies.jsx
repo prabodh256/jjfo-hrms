@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 
 export default function Policies() {
   const { policies, fetchPolicies, publishPolicy, ackPolicy, user } = useStore();
-  const canPublish = user?.role === 'admin' || hasCap(user, 'createUsers');
+  const canPublish = user?.role === 'admin';
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState({ title: '', category: 'HR', body: '', version: '1.0', mandatory: true });
   const [openId, setOpenId] = useState(null);

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 
 const DOC_TYPES = [
   { v: 'offer_letter', l: 'Offer letter' },
@@ -17,7 +16,7 @@ function Workflows() {
     resignations, fetchResignations, submitResignation, decideResignation
   } = useStore();
   const isAdmin = user?.role === 'admin';
-  const canIssue = isAdmin || hasCap(user, 'createUsers');
+  const canIssue = isAdmin;
   const isHr = isAdmin || (user?.department || '').toLowerCase().includes('hr');
   const [tab, setTab] = useState('docs');
   const [msg, setMsg] = useState('');

@@ -163,7 +163,7 @@ router.post('/migration/employees', authorize('admin'), async (req, res) => {
         where: { id: item.id },
         create: {
           id: item.id, name: item.name, email: item.email, password: temporaryPassword,
-          role: text(row.role, 30) || 'employee', status: text(row.status, 30) || 'active',
+          role: 'employee', status: text(row.status, 30) || 'active',
           department: text(row.department, 120) || null, designation: text(row.designation, 120) || null,
           doj: text(row.doj, 20) || null, dob: text(row.dob, 20) || null, contact: text(row.contact, 40) || null,
           salaryBasic: number(row.salaryBasic), salaryAllow: number(row.salaryAllow), salaryDeduct: number(row.salaryDeduct),
@@ -197,9 +197,19 @@ router.post('/migration/employees', authorize('admin'), async (req, res) => {
   }
   for (const item of valid) {
     const managerId = text(item.row.managerId, 80);
-    if (!managerId) continue;
-    const manager = await prisma.employee.findUnique({ where: { id: managerId }, select: { id: true } });
-    if (!manager || managerId === item.id) {
+    if (!managerId) {
+      issues.push({ rowNumber: item.rowNumber, employeeRef: item.id, field: 'managerId', message: 'Reporting manager is required for every imported employee.' });
+      continue;
+    }
+    const manager = await prisma.employee.findUnique({ where: { id: managerId }, select: { id: true, status: true } });
+    let createsCycle = false;
+    let cursor = managerId;
+    for (let hops = 0; cursor && hops < 100; hops += 1) {
+      if (cursor === item.id) { createsCycle = true; break; }
+      const current = await prisma.employee.findUnique({ where: { id: cursor }, select: { managerId: true } });
+      cursor = current?.managerId || null;
+    }
+    if (!manager || manager.status !== 'active' || managerId === item.id || createsCycle) {
       issues.push({ rowNumber: item.rowNumber, employeeRef: item.id, field: 'managerId', message: 'Reporting manager is invalid or missing.' });
     } else {
       await prisma.employee.update({ where: { id: item.id }, data: { managerId } });

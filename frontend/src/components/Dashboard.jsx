@@ -11,7 +11,7 @@ function Dashboard() {
   } = useStore();
   const isAdmin = user?.role === 'admin';
   const canApprove = isAdmin || hasCap(user, 'approveLeaves');
-  const isSupervisor = isAdmin || hasCap(user, 'createUsers');
+  const isSupervisor = isAdmin;
 
   useEffect(() => {
     fetchDashboardStats();

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import useStore from '../store';
-import { hasCap } from '../permissions';
 import Modal from './Modal';
 import EmployeeForm from './EmployeeForm';
 
@@ -209,7 +208,7 @@ function AdminOnboarding() {
 
       {addOpen && (
         <Modal wide title="Add New Hire" onClose={() => setAddOpen(false)}>
-          <EmployeeForm mode="create" grantable={grantable}
+          <EmployeeForm mode="create" grantable={grantable} managerOptions={employees}
             onSubmit={async (p) => { await addEmployee({ ...p, status: 'onboarding_draft', onboardingState: 'draft', onboardingNote: 'Please complete your onboarding details and upload the required documents.' }); setAddOpen(false); }}
             onCancel={() => setAddOpen(false)} />
         </Modal>
@@ -220,7 +219,7 @@ function AdminOnboarding() {
 
 function Onboarding() {
   const { user } = useStore();
-  return hasCap(user, 'createUsers') ? <AdminOnboarding /> : <MyOnboarding />;
+  return user?.role === 'admin' ? <AdminOnboarding /> : <MyOnboarding />;
 }
 
 export default Onboarding;

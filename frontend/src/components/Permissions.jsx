@@ -3,6 +3,7 @@ import useStore from '../store';
 import { moduleLevelsFrom, BASE_MODULES } from '../permissions';
 import Modal from './Modal';
 import PermissionPicker from './PermissionPicker';
+import { apiGet } from '../api';
 
 function summarize(emp) {
   const levels = moduleLevelsFrom(emp.permissions);
@@ -23,13 +24,15 @@ function Permissions() {
   const [editing, setEditing] = useState(null);
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
-  const [tab, setTab] = useState('people');
+  const [tab, setTab] = useState('guardrails');
+  const [guardrails, setGuardrails] = useState(null);
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     fetchEmployees();
     fetchGrantable();
     fetchPermRequests();
+    apiGet('/api/admin/guardrails').then(setGuardrails).catch((e) => setErr(e.message));
   }, [fetchEmployees, fetchGrantable, fetchPermRequests]);
 
   const open = (emp) => {
@@ -70,19 +73,45 @@ function Permissions() {
         <div>
           <h2>Access Control &amp; Permissions</h2>
           <p>
-            Grant <strong>View</strong> or <strong>Edit</strong> per module. Payroll is off unless granted.
-            Non-admin changes escalate for a manager/super-admin stamp.
+            The administrator provisions people, assigns hierarchy and stamps access. Employees cannot create accounts or change reporting lines.
           </p>
         </div>
       </div>
 
       <div className="tab-navigation">
+        <button type="button" className={`tab-btn ${tab === 'guardrails' ? 'active' : ''}`} onClick={() => setTab('guardrails')}>Guardrails</button>
         <button type="button" className={`tab-btn ${tab === 'people' ? 'active' : ''}`} onClick={() => setTab('people')}>People</button>
         <button type="button" className={`tab-btn ${tab === 'escalations' ? 'active' : ''}`} onClick={() => setTab('escalations')}>
           Escalations {pending.length ? `(${pending.length})` : ''}
         </button>
       </div>
       {msg && <p className="form-ok" style={{ marginTop: 8 }}>{msg}</p>}
+
+      {tab === 'guardrails' && (
+        <div style={{ marginTop: 16 }}>
+          {!guardrails ? <p>Loading controls…</p> : <>
+            <div className="kpi-grid" style={{ marginBottom: 16 }}>
+              {[
+                ['admin_panel_settings', guardrails.counts.activeAdmins, 'Active admins'],
+                ['groups', guardrails.counts.activeEmployees, 'Active employees'],
+                ['pending_actions', guardrails.counts.drafts + guardrails.counts.pendingOnboarding, 'Onboarding queue'],
+                ['account_tree', guardrails.counts.missingManagers, 'Missing managers']
+              ].map(([icon, value, label]) => <div className="kpi-card glass" key={label}><i className="material-icons-round">{icon}</i><h3>{value}</h3><p>{label}</p></div>)}
+            </div>
+            <div className="employee-grid">
+              {guardrails.controls.map((control) => (
+                <article className="glass p-6" key={control.key}>
+                  <span className={`status-badge ${control.enforced ? 'badge-success' : 'badge-warning'}`}>
+                    {control.enforced ? 'Enforced' : 'Production setup'}
+                  </span>
+                  <h3 style={{ marginTop: 12 }}>{control.label}</h3>
+                  <p className="text-muted">{control.detail}</p>
+                </article>
+              ))}
+            </div>
+          </>}
+        </div>
+      )}
 
       {tab === 'people' && (
         <div className="table-responsive" style={{ marginTop: 12 }}>

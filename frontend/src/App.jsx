@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, Link
+  BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link
 } from 'react-router-dom';
 import useStore from './store';
 import { applyPreferences, parsePrefs } from './theme';
@@ -42,7 +42,7 @@ const NAV = [
   { to: '/helpdesk', key: 'helpdesk', icon: 'support_agent', label: 'HR Helpdesk' },
   { to: '/workflows', key: 'onboarding', icon: 'assignment', label: 'HR Workflows' },
   { to: '/people-ops', key: 'peopleops', icon: 'domain_add', label: 'People Operations' },
-  { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Permissions', capAlt: 'createUsers' },
+  { to: '/permissions', key: 'permissions', icon: 'admin_panel_settings', label: 'Admin Controls' },
   { to: '/gsync', key: 'gsync', icon: 'cloud_sync', label: 'Document Vault' },
   { to: '/reports', key: 'reports', icon: 'insights', label: 'Reports' },
   { to: '/audit', key: 'audit', icon: 'fact_check', label: 'Audit Log' },
@@ -50,10 +50,11 @@ const NAV = [
 ];
 
 const canSee = (user, item) =>
+  (item.key === 'permissions' ? user?.role === 'admin' :
   item.key === 'payroll' || // every employee may access their own payslips
   hasModule(user, item.key) ||
   (item.capAlt && hasCap(user, item.capAlt)) ||
-  (item.key === 'onboarding' && user.onboardingState && user.onboardingState !== 'approved');
+  (item.key === 'onboarding' && user.onboardingState && user.onboardingState !== 'approved'));
 
 function Guard({ k, children }) {
   const { user } = useStore();
